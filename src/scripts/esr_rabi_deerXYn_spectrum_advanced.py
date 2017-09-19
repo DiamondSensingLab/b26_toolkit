@@ -22,9 +22,9 @@ from b26_toolkit.src.scripts.pulse_blaster_scripts_CN041 import Rabi, DEER_XYn, 
 import numpy as np
 
 
-class EsrRabiDeerXYnSpectrum(Script):
+class EsrRabiDeerXYnSpectrumAdvanced(Script):
     """
-    Does an ESR experiment, a Rabi experiment and a DEER experiment on an NV. Can scan over RF power,
+    Does an ESR experiment, a Rabi experiment and a DEER experiment on an NV. Can scan over RF power, 
     """
 
     _DEFAULT_SETTINGS = [
@@ -50,10 +50,32 @@ class EsrRabiDeerXYnSpectrum(Script):
                     Parameter('RF_pwr_sweep_npoints', 11, float, 'RF power sweep number of points'),
                 ])
             ]),
-            Parameter('scan_RF_freq',True, bool,'check if doing DEER scanning over RF frequency'),
-            Parameter('scan_RF_power', False, bool, 'check if doing DEER scanning over RF power'),
-            Parameter('scan_RF_pi_time', False, bool, 'check if doing DEER scanning over RF pi time')
-        ]),
+            Parameter('tau_auto_range',[
+                Parameter('min_tau_auto',500,float, 'minimum accepted tau_auto'),
+                Parameter('max_tau_auto',8000,float, 'maximum accepted tau_auto')
+            ]),
+            Parameter('scan_RF_freq',[
+                Parameter('do_scan_RF_freq', False, bool,'check if doing DEER scanning over RF frequency'),
+                Parameter('set_tau','manual',['auto','manual'],
+                          'find tau automatically from deer_tau experiment or manually type in tau in the deer_freq subscript')
+                ]),
+
+            Parameter('scan_RF_power', [
+                Parameter('do_scan_RF_power', False, bool, 'check if doing DEER scanning over RF frequency'),
+                Parameter('set_tau', 'manual', ['auto', 'manual'],
+                          'find tau automatically from deer_tau experiment or manually type in tau in the deer_pwr subscript')
+            ]),
+
+            Parameter('scan_RF_pi_time', [
+                Parameter('do_scan_RF_pi_time', False, bool, 'check if doing DEER scanning over RF frequency'),
+                Parameter('set_tau', 'manual', ['auto', 'manual'],
+                          'find tau automatically from deer_tau experiment or manually type in tau in the deer_RFpitime subscript')
+            ])
+
+            # Parameter('scan_RF_freq',True, bool,'check if doing DEER scanning over RF frequency'),
+            # Parameter('scan_RF_power', False, bool, 'check if doing DEER scanning over RF power'),
+            # Parameter('scan_RF_pi_time', False, bool, 'check if doing DEER scanning over RF pi time')
+        ])
 
     ]
 
@@ -69,6 +91,11 @@ class EsrRabiDeerXYnSpectrum(Script):
     def _function(self):
 
         self.data = {'dummy': 'placeholder'}
+
+        if (self.settings['DEER_spectrum']['scan_RF_power']['do_scan_RF_power'] and ['DEER_spectrum']['scan_RF_power']['set_tau'] == 'auto')  or (self.settings['DEER_spectrum']['scan_RF_freq']['do_scan_RF_freq'] and ['DEER_spectrum']['scan_RF_freq']['set_tau'] == 'auto') or (self.settings['DEER_spectrum']['scan_RF_pi_time']['do_scan_RF_pi_time'] and ['DEER_spectrum']['scan_RF_pi_time']['set_tau'] == 'auto'):
+            assert ['DEER_spectrum']['scan_tau']['do_scan_tau'], "run scan_tau to set tau automatically"
+
+
 
         ####### run ESR script
         self.scripts['esr'].run()
@@ -105,23 +132,6 @@ class EsrRabiDeerXYnSpectrum(Script):
                         ####### run DEER script
                         run_deer = 0
 
-                        if self.settings['DEER_spectrum']['scan_RF_power']:
-                            run_deer = 1
-                            self.log('Starting DEER scanning over RF power with Pi/2=({:0.2e}), Pi=({:0.2e}), 3Pi/2=({:0.2e})'.format(
-                                    self.pi_half_time, self.pi_time, self.three_pi_half_time))
-                            self.scripts['deer_pwr'].settings['mw_pulses']['mw_frequency'] = float(self.rabi_frequency)
-                            self.scripts['deer_pwr'].settings['mw_pulses']['pi_half_pulse_time'] = float(
-                                self.pi_half_time)
-                            self.scripts['deer_pwr'].settings['mw_pulses']['pi_pulse_time'] = float(self.pi_time)
-                            self.scripts['deer_pwr'].settings['RF_pulses']['RF_pi_pulse_time'] = float(self.pi_time) # otherwise short pulse
-                            self.scripts['deer_pwr'].settings['mw_pulses']['3pi_half_pulse_time'] = float(
-                                self.three_pi_half_time)
-
-                            self.scripts['deer_pwr'].settings['decoupling_seq']['type'] = \
-                                self.settings['decoupling_seq']['type']
-                            self.scripts['deer_pwr'].settings['decoupling_seq']['num_of_pulse_blocks'] = \
-                                self.settings['decoupling_seq']['num_of_pulse_blocks']
-                            self.scripts['deer_pwr'].run()
 
                         if self.settings['DEER_spectrum']['scan_tau']['do_scan_tau']:
                             run_deer = 1
@@ -149,10 +159,49 @@ class EsrRabiDeerXYnSpectrum(Script):
                             else:
                                 self.scripts['deer_tau'].run()
 
+                            if self.scripts['deer_tau'].data['tau_auto'] is not None:
+                                if self.scripts['deer_tau'].data['tau_auto'] < self.settings['DEER_spectrum']['tau_auto_range']['min_tau_auto'] or self.scripts['deer_tau'].data['tau_auto'] > self.settings['DEER_spectrum']['tau_auto_range']['max_tau_auto']:
+                                    self.tau_auto = None
+                                    self.log('tau_auto is outside acceptable tau_auto_range. use manually set tau instead in subsequent experiments')
+                                else:
+                                    self.tau_auto = self.scripts['deer_tau'].data['tau_auto']
+                            else:
+                                self.tau_auto = None
+                                self.log('no tau found for good contrast between deer and echo. use manually set tau instead in subsequent experiments')
+
                             # return to original tag:
                             self.scripts['deer_tau'].settings['tag'] = base_tag_deer
 
-                        if self.settings['DEER_spectrum']['scan_RF_freq']:
+                        if self.settings['DEER_spectrum']['scan_RF_power']['do_scan_RF_power']:
+                            run_deer = 1
+                            self.log('Starting DEER scanning over RF power with Pi/2=({:0.2e}), Pi=({:0.2e}), 3Pi/2=({:0.2e})'.format(
+                                    self.pi_half_time, self.pi_time, self.three_pi_half_time))
+                            self.scripts['deer_pwr'].settings['mw_pulses']['mw_frequency'] = float(self.rabi_frequency)
+                            self.scripts['deer_pwr'].settings['mw_pulses']['pi_half_pulse_time'] = float(
+                                self.pi_half_time)
+                            self.scripts['deer_pwr'].settings['mw_pulses']['pi_pulse_time'] = float(self.pi_time)
+                            self.scripts['deer_pwr'].settings['RF_pulses']['RF_pi_pulse_time'] = float(self.pi_time) # otherwise short pulse
+                            self.scripts['deer_pwr'].settings['mw_pulses']['3pi_half_pulse_time'] = float(
+                                self.three_pi_half_time)
+
+                            self.scripts['deer_pwr'].settings['decoupling_seq']['type'] = \
+                                self.settings['decoupling_seq']['type']
+                            self.scripts['deer_pwr'].settings['decoupling_seq']['num_of_pulse_blocks'] = \
+                                self.settings['decoupling_seq']['num_of_pulse_blocks']
+
+                            if ['DEER_spectrum']['scan_RF_power']['set_tau'] == 'auto':
+                                if self.tau_auto is not None:
+                                    self.scripts['deer_pwr'].settings['tau_time'] = float(self.auto)
+                                    self.log(
+                                        'use tau_auto = ({:0.2e})ns for DEER scan_RF_power'.format(self.tau_auto))
+                                else:
+                                    self.log('set_tau auto failed, use manually set tau instead')
+
+                            self.scripts['deer_pwr'].run()
+
+
+
+                        if self.settings['DEER_spectrum']['scan_RF_freq']['do_scan_RF_freq']:
                             run_deer = 1
                             self.log('Starting DEER scanning over RF frequency with Pi/2=({:0.2e}), Pi=({:0.2e}), 3Pi/2=({:0.2e})'.format(
                                     self.pi_half_time, self.pi_time, self.three_pi_half_time))
@@ -163,10 +212,10 @@ class EsrRabiDeerXYnSpectrum(Script):
                             self.scripts['deer_freq'].settings['RF_pulses']['RF_pi_pulse_time'] = float(self.pi_time)
                             print('here we are')# otherwise short pulse
 
-                            if self.scripts['deer_freq'].settings['mw_pulses']['pi_pulse_time'] == self.scripts['deer_freq'].settings['RF_pulses']['RF_pi_pulse_time']:
-                                print ('same pi time')
-                            else:
-                                print ('different pi time')
+                            # if self.scripts['deer_freq'].settings['mw_pulses']['pi_pulse_time'] == self.scripts['deer_freq'].settings['RF_pulses']['RF_pi_pulse_time']:
+                            #     print ('same pi time')
+                            # else:
+                            #     print ('different pi time')
 
 
                             self.scripts['deer_freq'].settings['mw_pulses']['3pi_half_pulse_time'] = float(
@@ -175,10 +224,18 @@ class EsrRabiDeerXYnSpectrum(Script):
                                 self.settings['decoupling_seq']['type']
                             self.scripts['deer_freq'].settings['decoupling_seq']['num_of_pulse_blocks'] = \
                                 self.settings['decoupling_seq']['num_of_pulse_blocks']
-                            print('before running')
+                            # print('before running')
+                            if ['DEER_spectrum']['scan_RF_freq']['set_tau'] == 'auto':
+                                if self.tau_auto is not None:
+                                    self.scripts['deer_freq'].settings['tau_time'] = float(self.auto)
+                                    self.log(
+                                        'use tau_auto = ({:0.2e})ns for DEER scan_RF_freq'.format(self.tau_auto))
+                                else:
+                                    self.log('set_tau auto failed, use manually set tau instead')
+
                             self.scripts['deer_freq'].run()
 
-                        if self.settings['DEER_spectrum']['scan_RF_pi_time']:
+                        if self.settings['DEER_spectrum']['scan_RF_pi_time']['do_scan_RF_pi_time']:
                             run_deer = 1
                             self.log('Starting DEER scanning over RF pi time with Pi/2=({:0.2e}), Pi=({:0.2e}), 3Pi/2=({:0.2e})'.format(
                                     self.pi_half_time, self.pi_time, self.three_pi_half_time))
@@ -194,6 +251,14 @@ class EsrRabiDeerXYnSpectrum(Script):
                                 self.settings['decoupling_seq']['type']
                             self.scripts['deer_RFpitime'].settings['decoupling_seq']['num_of_pulse_blocks'] = \
                                 self.settings['decoupling_seq']['num_of_pulse_blocks']
+
+                            if ['DEER_spectrum']['scan_RF_pi_time']['set_tau'] == 'auto':
+                                if self.tau_auto is not None:
+                                    self.scripts['deer_RFpitime'].settings['tau_time'] = float(self.tau_auto)
+                                    self.log('use tau_auto = ({:0.2e})ns for DEER scan_RF_pi_time'.format(self.tau_auto))
+                                else:
+                                    self.log('set_tau auto failed, use manually set tau instead')
+
                             self.scripts['deer_RFpitime'].run()
 
                         if run_deer == 0:
@@ -319,7 +384,7 @@ class EsrRabiDeerXYnSpectrum(Script):
     #     return super(EsrRabiDeer, self).get_axes_layout(figure_list)
 
 if __name__ == '__main__':
-    script, failed, instr = Script.load_and_append({'EsrRabiDeerXYnSpectrum': EsrRabiDeerXYnSpectrum})
+    script, failed, instr = Script.load_and_append({'EsrRabiDeerXYnSpectrumAdvanced': EsrRabiDeerXYnSpectrumAdvanced})
 
     print(script)
     print(failed)

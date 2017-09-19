@@ -173,7 +173,7 @@ class ESR(Script):
             freq_values = np.linspace(self.settings['freq_start'], self.settings['freq_stop'], self.settings['freq_points'])
             freq_range = max(freq_values) - min(freq_values)
         elif self.settings['range_type'] == 'center_range':
-            if self.settings['freq_start'] < 2 * self.settings['freq_stop']:
+            if 2*self.settings['freq_start'] < self.settings['freq_stop']:
                 self.log('end freq. (range) must be smaller than 2x start freq (center) when range_type is center_range. Abort script')
                 self._abort = True
             freq_values = np.linspace(self.settings['freq_start']-self.settings['freq_stop']/2,
@@ -209,6 +209,7 @@ class ESR(Script):
         esr_data = np.zeros((self.settings['esr_avg'], len(freq_values)))
         avrg_counts = np.zeros(self.settings['esr_avg']) # here we save the avrg of the esr scan which we will use to normalize
         self.data = {'frequency': [], 'data': [], 'fit_params': [], 'avrg_counts' : avrg_counts}
+        self.current_avg_cnts = 0
 
         # run sweeps
         for scan_num in xrange(0, self.settings['esr_avg']):
@@ -238,11 +239,17 @@ class ESR(Script):
             # print('JG20170615 avrg counts',scan_num, avrg_counts[scan_num] )
             # print('JG20170515 shape of esr daagta', np.shape(esr_data[0:(scan_num + 1)]))
             # print('JG20170515 len(freq_values)', len(freq_values))
+            self.current_avg_cnts = np.mean(avrg_counts[scan_num])
+            # print 'current counts'
+
+            # print self.current_avg_cnts
 
             if take_ref is True:
                 esr_data[scan_num] /=avrg_counts[scan_num]
 
             esr_avg = np.mean(esr_data[0:(scan_num + 1)] , axis=0)
+            # print esr_avg
+
 
             fit_params = fit_esr(freq_values, esr_avg)
             self.data.update({'frequency': freq_values, 'data': esr_avg, 'fit_params': fit_params})
@@ -283,9 +290,13 @@ class ESR(Script):
         if data is None:
             data = self.data
 
-        plot_esr(axes_list[0], data['frequency'], data['data'], data['fit_params'])
+        mean_counts = self.current_avg_cnts
 
-    def _update_plot(self, axes_list):
+
+
+        plot_esr(axes_list[0], data['frequency'], data['data'], data['fit_params'], avg_counts = mean_counts)
+
+    def _update_plot(self, axes_list, mean_counts=0):
         """
         plotting function for esr
         Args:
@@ -296,7 +307,10 @@ class ESR(Script):
         """
         data = self.data
 
-        plot_esr(axes_list[0], data['frequency'], data['data'], data['fit_params'])
+        mean_counts = self.current_avg_cnts
+
+
+        plot_esr(axes_list[0], data['frequency'], data['data'], data['fit_params'], avg_counts = mean_counts)
 
     def get_axes_layout(self, figure_list):
         """

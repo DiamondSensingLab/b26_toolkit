@@ -55,7 +55,7 @@ def plot_psd(freq, psd, axes, y_scaling = 'log', x_scaling = 'lin'):
 
     axes.set_xlim([min(c_unit*freq), max(c_unit*freq)])
 
-def plot_esr(axes, frequency, counts, fit_params=None, plot_marker_data = 'b', plot_marker_fit = 'r'):
+def plot_esr(axes, frequency, counts, fit_params=None, plot_marker_data = 'b', plot_marker_fit = 'r', avg_counts = 0):
     """
     plots the esr
     Args:
@@ -81,12 +81,19 @@ def plot_esr(axes, frequency, counts, fit_params=None, plot_marker_data = 'b', p
         if len(fit_params) == 4:
             # single peak
             fit_data = lorentzian(frequency, *fit_params)
-            title = 'ESR fo = {:0.4e}, wo = {:0.2e}'.format(fit_params[2], fit_params[3])
+            if not avg_counts == 0:
+                title = 'ESR, averaged counts: {:0.2e}kcps \n fo = {:0.4e}, wo = {:0.2e}'.format(avg_counts, fit_params[2], fit_params[3])
+            else:
+                title = 'ESR \n fo = {:0.4e}, wo = {:0.2e}'.format(fit_params[2], fit_params[3])
         elif len(fit_params) == 6:
             # double peak
             fit_data = double_lorentzian(frequency, *fit_params)
-            title = 'ESR f1 = {:0.4e} Hz, f2 = {:0.4e} Hz, wo = {:0.2e}'.format(fit_params[4], fit_params[5],
+            if not avg_counts == 0:
+                title = 'ESR, averaged counts: {:.2f}kcps  \n f1 = {:0.4e} Hz, f2 = {:0.4e} Hz, wo = {:0.2e}'.format(avg_counts, fit_params[4], fit_params[5],
                                                                                 fit_params[1])
+            else:
+                title = 'ESR \n f1 = {:0.4e} Hz, f2 = {:0.4e} Hz, wo = {:0.2e}'.format(fit_params[4], fit_params[5],
+                                                                                       fit_params[1])
 
     if fit_data is not None:
         axes.plot(frequency, fit_data, plot_marker_fit)

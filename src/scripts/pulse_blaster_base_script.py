@@ -152,6 +152,8 @@ for a given experiment
             self.data['counts'] = np.array([item for sublist in self.data['counts'] for item in sublist])
             self.data['shot_noise'] = np.array([item for sublist in self.data['shot_noise'] for item in sublist])
 
+        return (average_loop + 1)
+
         # if self.settings['save']:
         #     self.save_b26()
         #     self.save_data()
@@ -266,6 +268,10 @@ for a given experiment
             if (self.settings['Tracking']['on/off']):
                 if (self.settings['Tracking']['threshold']*self.data['init_fluor'] > counts_temp or
                             (2-self.settings['Tracking']['threshold'])*self.data['init_fluor'] < counts_temp):
+                    print('init counts:', self.data['init_fluor'])
+                    print('new counts:', counts_temp)
+                    print('low thresh = ', self.settings['Tracking']['threshold']*self.data['init_fluor'])
+                    print('high thresh = ', (2-self.settings['Tracking']['threshold'])*self.data['init_fluor'])
              #      self._plot_refresh = True
                     print('TRACKING TO NV...')
                     self.scripts['find_nv'].run()

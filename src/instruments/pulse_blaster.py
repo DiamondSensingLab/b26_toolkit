@@ -280,6 +280,7 @@ class PulseBlaster(Instrument):
         # Make sure we have a command at time=0, the command to have nothing on.
         if 0 not in pb_command_dict.keys():
             pb_command_dict[0] = 0
+        # print pb_command_dict
 
         # For each time, combine all of the channels we need to toggle into a single bit string, and add it to a
         # command list of PBStateChange objects
@@ -287,8 +288,8 @@ class PulseBlaster(Instrument):
         # --------------------
         # here is where short pulses are created ZQ 8/28/17
         for instruction_time, bit_strings in pb_command_dict.iteritems():
-            if instruction_time<15:
-                print ('found <15 instruction time')
+            # if instruction_time<15:
+            #     print ('found <15 instruction time')
             channel_bits = np.bitwise_xor.reduce(bit_strings)
             if channel_bits != 0 or instruction_time == 0:
                 pb_command_list.append(self.PBStateChange(channel_bits, instruction_time))

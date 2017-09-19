@@ -49,7 +49,8 @@ DAQmx_Val_Volts = 10348
 DAQmx_Val_Rising = 10280
 DAQmx_Val_FiniteSamps = 10178
 DAQmx_Val_ContSamps = 10123
-DAQmx_Val_GroupByChannel = 0
+DAQmx_Val_GroupByChannel = bool32(0)
+DAQmx_Val_GroupByScanNumber = bool32(1)
 
 # DI constants
 DAQmx_Val_CountUp = 10128
@@ -58,8 +59,8 @@ DAQmx_Val_Low = 10214  # Low
 DAQmx_Val_Seconds = 10364
 DAQmx_Val_Ticks = 10304  # specifies units as timebase ticks
 
-DAQmx_Val_ChanPerLine = 0  # One Channel For Each Line
-DAQmx_Val_ChanForAllLines = 1  # One Channel For All Lines
+DAQmx_Val_ChanPerLine = int32(0)  # One Channel For Each Line
+DAQmx_Val_ChanForAllLines = int32(1)  # One Channel For All Lines
 
 
 # =============== NI DAQ 6259======= =======================
@@ -211,12 +212,32 @@ class DAQ(Instrument):
                   [
                       Parameter('do0',
                                 [
-                                    Parameter('channel', 0, range(0, 16), 'channel')
+                                    Parameter('channel', 0, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
+                                ]
+                                ),
+                      Parameter('do1',
+                                [
+                                    Parameter('channel', 1, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
+                                ]
+                                ),
+                      Parameter('do2',
+                                [
+                                    Parameter('channel', 2, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
+                                ]
+                                ),
+                      Parameter('do3',
+                                [
+                                    Parameter('channel', 3, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
                                 ]
                                 ),
                       Parameter('do8',
                                 [
-                                    Parameter('channel', 8, range(0, 16), 'channel')
+                                    Parameter('channel', 8, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
                                 ]
                                 )
                   ]
@@ -377,6 +398,32 @@ class DAQ(Instrument):
                                                                 float64(task['sample_rate']), float64(DutyCycle)))
         self._check_error(self.nidaq.DAQmxCfgImplicitTiming(task['task_handle'],
                                                             DAQmx_Val_ContSamps, uInt64(task['sample_num'])))
+
+    def output_N_dig_pulses(self, n_pulses, pulse_rate, DutyCycle, channel):
+
+        task = {
+            'task_handle': TaskHandle(0),
+            'sample_num': n_pulses,
+            'sample_rate': pulse_rate*1000,
+            'num_samples_per_channel': None,
+            'timeout': None
+        }
+        task_name = self._add_to_tasklist('clk', task)
+        # channel_settings = self.settings['digital_input'][channel]
+        counter_out_str = self.settings['device'] + '/' + channel
+        self.running = True
+
+        self._check_error(self.nidaq.DAQmxCreateTask("", ctypes.byref(task['task_handle'])))
+        self._check_error(self.nidaq.DAQmxCreateCOPulseChanFreq(task['task_handle'],
+                                                                counter_out_str, '', DAQmx_Val_Hz, DAQmx_Val_Low,
+                                                                float64(0.0),
+                                                                float64(task['sample_rate']), float64(DutyCycle)))
+        self._check_error(self.nidaq.DAQmxCfgImplicitTiming(task['task_handle'],
+                                                            DAQmx_Val_FiniteSamps, uInt64(task['sample_num'])))
+
+        self.run(task_name)
+        self.waitToFinish(task_name)
+        self.stop(task_name)
 
     def setup_gated_counter(self, channel, num_samples):
         """
@@ -611,7 +658,7 @@ class DAQ(Instrument):
 
         return task_name
 
-    def setup_DO(self, channels):
+    def setup_DO(self, channels, sample_rate=2000.0):
         """
         Initializes a arbitrary number of digital output channels to output an arbitrary waveform
         Args:
@@ -628,7 +675,7 @@ class DAQ(Instrument):
         task = {
             'task_handle': None,
             'sample_num': None,
-            'sample_rate': None,
+            'sample_rate': float(sample_rate),
             'num_samples_per_channel': None,
             'timeout': None
         }
@@ -640,40 +687,93 @@ class DAQ(Instrument):
         for c in channels:
             if not c in self.settings['digital_output'].keys():
                 raise KeyError('This is not a valid digital output channel')
+
+        # AB_09_14_2017: sample rate is now set by input to setup_DO
+
         task['sample_rate'] = float(
             self.settings['digital_output'][channels[0]]['sample_rate'])  # float prevents truncation in division
+
         for c in channels:
-            if not self.settings['digital_output'][c]['sample_rate'] == task['sample_rate']:
-                raise ValueError('All sample rates must be the same')
+            print(c)
+            print(self.settings['digital_output'][c]['sample_rate'])
+
+        # for c in channels:
+        #     print(self.settings['digital_output'][c]['sample_rate'])
+        #     print(task['sample_rate'])
+        #     if not self.settings['digital_output'][c]['sample_rate'] == task['sample_rate']:
+        #         raise ValueError('All sample rates must be the same')
+
+        # lines_list = ''
+        # for c in channels:
+        #     lines_list += self.settings['device'] + '/port0/line' + str(
+        #         self.settings['digital_output'][c]['channel']) + ','
+        # lines_list = lines_list[:-1]  # remove the last comma
 
         lines_list = ''
         for c in channels:
             lines_list += self.settings['device'] + '/port0/line' + str(
-                self.settings['digital_output'][c]['channel']) + ','
+                self.settings['digital_output'][c]['channel']) + ':'
         lines_list = lines_list[:-1]  # remove the last comma
+
+        # lines_list = self.settings['device'] + '/port0/line' +str(self.settings['digital_output'][channels[0]]['channel']) + ':' +str(self.settings['digital_output'][channels[-1]]['channel'])
 
         self.running = True
 
+
+
         task['task_handle'] = TaskHandle(0)
+
+
+
         self._check_error(self.nidaq.DAQmxCreateTask("", ctypes.byref(task['task_handle'])))
+
+        print('task')
+        print(task)
+        print('lines_list')
+        print(lines_list)
+
         self._check_error(self.nidaq.DAQmxCreateDOChan(task['task_handle'],
                                                        lines_list,
                                                        "",
-                                                       DAQmx_Val_ChanPerLine))
+                                                       DAQmx_Val_ChanForAllLines
+                                                       # DAQmx_Val_ChanPerLine
+                                                       ))
 
         return task_name
 
     def DO_write(self, task_name, output_values):
         task = self.tasklist[task_name]
         sample_num = (numpy.array(output_values).shape)[-1]
+        task['sample_num'] = sample_num
+        sample_num=1
+        sampsPerChanWritten = ctypes.c_uint32()
+        print('sample number:')
+        print(sample_num)
+        print('line values written:')
+        print(output_values)
+        print(np.array(output_values))
+        print(np.array(output_values).ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)))
+        # outp = np.transpose(np.array(output_values))
+        outp = np.array([output_values])
+        # outp = np.array([output_values]).T
+        # outp = (np.repeat(outp, 2, axis=1))
+        print('task')
+        print(task)
         self._check_error(self.nidaq.DAQmxWriteDigitalLines(task['task_handle'],
                                                             int32(sample_num),
-                                                            bool32(False),
-                                                            float64(-1),
+                                                            bool32(True),
+                                                            # float64(-1),
+                                                            float64(1),
+                                                            # DAQmx_Val_GroupByScanNumber,
                                                             DAQmx_Val_GroupByChannel,
-                                                            np.array(output_values).ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
-                                                            None,
+                                                            # np.array(output_values).ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+                                                            outp.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+                                                            # np.array(1).ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+                                                            ctypes.byref(sampsPerChanWritten),
                                                             None))
+
+        print('samples per channel written:')
+        print(sampsPerChanWritten.value)
 
     def read_AI(self, task_name):
         """
@@ -720,8 +820,14 @@ class DAQ(Instrument):
 
         """
         task = self.tasklist[task_name]
+        print('sample number:')
+        print(task['sample_num'])
+        print('sample rate in Hz:')
+        print(task['sample_rate'])
         self._check_error(self.nidaq.DAQmxWaitUntilTaskDone(task['task_handle'],
                                                             float64(task['sample_num'] / task['sample_rate'] * 4 + 1)))
+        # self._check_error(self.nidaq.DAQmxWaitUntilTaskDone(task['task_handle'],
+        #                                                     float64(-1)))
 
     def read(self, task_name):
         if 'ctr' in task_name:
@@ -996,19 +1102,31 @@ class NI6259(DAQ):
                       Parameter('do0',
                                 [
                                     Parameter('channel', 0, range(0, 16), 'channel'),
-                                    # Parameter('value', False, bool, 'value')
-                                    Parameter('sample_rate', 1000.0, float, 'output sample rate (Hz)')
-                                    # Parameter('min_voltage', -10.0, float, 'minimum output voltage (V)'),
-                                    # Parameter('max_voltage', 10.0, float, 'maximum output voltage (V)')
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
+                                ]
+                                ),
+                      Parameter('do1',
+                                [
+                                    Parameter('channel', 1, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
+                                ]
+                                ),
+                      Parameter('do2',
+                                [
+                                    Parameter('channel', 2, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
+                                ]
+                                ),
+                      Parameter('do3',
+                                [
+                                    Parameter('channel', 3, range(0, 16), 'channel'),
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
                                 ]
                                 ),
                       Parameter('do8',
                                 [
                                     Parameter('channel', 8, range(0, 16), 'channel'),
-                                    # Parameter('value', False, bool, 'value')
-                                    Parameter('sample_rate', 1000.0, float, 'output sample rate (Hz)')
-                                    # Parameter('min_voltage', -10.0, float, 'minimum output voltage (V)'),
-                                    # Parameter('max_voltage', 10.0, float, 'maximum output voltage (V)')
+                                    Parameter('sample_rate', 1000.0, float, 'input sample rate (Hz)')
                                 ]
                                 )
                   ]
