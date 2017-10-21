@@ -191,14 +191,16 @@ class ESR(Script):
         self.instruments['PB']['instance'].update({'laser': {'status': True}})
         self.instruments['PB']['instance'].update({'microwave_switch':{'status': True}})
 
+        self.instruments['microwave_generator']['instance'].update({'amplitude': self.settings['power_out']})
+        self.instruments['microwave_generator']['instance'].update({'modulation_type': 'FM'})
+        self.instruments['microwave_generator']['instance'].update({'dev_width': self.max_SRS_dev_width(min(freq_values))})
+        self.instruments['microwave_generator']['instance'].update({'modulation_function': 'External'})
+        self.instruments['microwave_generator']['instance'].update({'enable_modulation': True})
+
         num_freq_sections = int(freq_range) / int(self.instruments['microwave_generator']['instance'].settings['dev_width']*2) + 1
         clock_adjust = int((self.settings['integration_time'] + self.settings['settle_time']) / self.settings['settle_time'])
         freq_array = np.repeat(freq_values, clock_adjust)
-        self.instruments['microwave_generator']['instance'].update({'amplitude': self.settings['power_out']})
-        self.instruments['microwave_generator']['instance'].update({'modulation_type': 'FM'})
-        self.instruments['microwave_generator']['instance'].update({'dev_width': 3.2E7})
-        self.instruments['microwave_generator']['instance'].update({'modulation_function': 'External'})
-        self.instruments['microwave_generator']['instance'].update({'enable_modulation': True})
+
 
         sample_rate = float(1) / self.settings['settle_time']
         self.daq_out.settings['analog_output']['ao3']['sample_rate'] = sample_rate
@@ -236,23 +238,15 @@ class ESR(Script):
 
 
             avrg_counts[scan_num] = np.mean(esr_data[scan_num])
-            # print('JG20170615 avrg counts',scan_num, avrg_counts[scan_num] )
-            # print('JG20170515 shape of esr daagta', np.shape(esr_data[0:(scan_num + 1)]))
-            # print('JG20170515 len(freq_values)', len(freq_values))
             self.current_avg_cnts = np.mean(avrg_counts[scan_num])
-            # print 'current counts'
-
-            # print self.current_avg_cnts
 
             if take_ref is True:
                 esr_data[scan_num] /=avrg_counts[scan_num]
-
             esr_avg = np.mean(esr_data[0:(scan_num + 1)] , axis=0)
-            # print esr_avg
 
-
-            fit_params = fit_esr(freq_values, esr_avg)
+            fit_params = fit_esr(freq_values, esr_avg, strain_filtering=False, verbose = False)
             self.data.update({'frequency': freq_values, 'data': esr_avg, 'fit_params': fit_params})
+            # print('ESR parameters found:' + str(fit_params))
 
 
             if self.settings['save_full_esr']:
@@ -269,7 +263,23 @@ class ESR(Script):
         if self.settings['laser_off_after']:
             self.instruments['PB']['instance'].update({'laser': {'status': False}})
 
+    def max_SRS_dev_width(self, min_freq):
+        if min_freq > 2.025e9:
+            dev_width = 32e6
+        elif min_freq > 1.0125e9:
+            dev_width = 16e6
+        elif min_freq > 506.25e6:
+            dev_width = 8e6
+        elif min_freq > 253.25e6:
+            dev_width = 4e6
+        elif min_freq>126.5625e6:
+            dev_width = 2e6
+        elif min_freq > 62.5e6:
+            dev_width = 1e6
+        else:
+            dev_width = min(min_freq,64e6-min_freq)
 
+        return dev_width
 
     def _calc_progress(self, scan_num):
         #COMMENT_ME

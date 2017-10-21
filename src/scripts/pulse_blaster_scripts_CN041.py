@@ -49,7 +49,7 @@ This script applies a microwave pulse at fixed power for varying durations to me
             Parameter('meas_time', 500, int, '[ns] APD window to count photons at the beginning of optical pulse'),
             Parameter('nv_reset_time', 2000, float, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int, '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 500000, int, 'number of averages'),
@@ -338,7 +338,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 1000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 1000, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 30, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -512,7 +512,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -912,14 +912,15 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
         ]),
         Parameter('decoupling_seq', [
             Parameter('type', 'XY4',['spin_echo','XY4','XY8','CPMG'], 'type of dynamical decoupling sequences'),
-            Parameter('num_of_pulse_blocks', 1, int, 'number of pulse blocks.')
+            Parameter('num_of_pulse_blocks', 1, int, 'number of pulse blocks.'),
+            Parameter('do_deer', True, bool, 'choose to perform the DEER half of the sequence or not')
         ]),
         Parameter('read_out', [
             Parameter('meas_time', 500, float, '[ns] APD window to count  photons during readout'),
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 1200000, int, 'number of averages'),
@@ -958,7 +959,10 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
         self.instruments['RF_gen']['instance'].update({'freq_mode': 'CW'})
         self.instruments['RF_gen']['instance'].update({'power_mode': 'CW'})
         ### Turn on RF generator:
-        self.instruments['RF_gen']['instance'].update({'enable_output': True})
+        if self.settings['decoupling_seq']['do_deer']:
+            self.instruments['RF_gen']['instance'].update({'enable_output': True})
+        else:
+            self.instruments['RF_gen']['instance'].update({'enable_output': False})
 
         ### Turn off green light (the pulse blaster will pulse it on when needed)
         self.instruments['PB']['instance'].update({'laser': {'status': False}})
@@ -971,46 +975,36 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
         self.instruments['mw_gen']['instance'].update({'enable_output': False})
 
         self.data['norm_echo'] = 2.*(- self.data['counts'][:, 1] + self.data['counts'][:,0]) / (self.data['counts'][:,1] + self.data['counts'][:, 0])
-        self.data['norm_deer'] = 2.*(- self.data['counts'][:, 3] + self.data['counts'][:,2]) / (self.data['counts'][:,3] + self.data['counts'][:, 2])
+        if self.settings['decoupling_seq']['do_deer']:
+            self.data['norm_deer'] = 2.*(- self.data['counts'][:, 3] + self.data['counts'][:,2]) / (self.data['counts'][:,3] + self.data['counts'][:, 2])
 
         # error propagation starting with shot noise for each trace:
         self.data['echo_err'] = 2*(self.data['counts'][:,1]*self.data['counts'][:, 0])/np.square(self.data['counts'][:,1] + self.data['counts'][:, 0])*np.sqrt(np.square(self.data['shot_noise'][:, 0]) + np.square(self.data['shot_noise'][:, 1]))
-        self.data['deer_err'] = 2*(self.data['counts'][:,3]*self.data['counts'][:, 2])/np.square(self.data['counts'][:,3] + self.data['counts'][:, 2])*np.sqrt(np.square(self.data['shot_noise'][:, 2]) + np.square(self.data['shot_noise'][:, 3]))
+        if self.settings['decoupling_seq']['do_deer']:
+            self.data['deer_err'] = 2*(self.data['counts'][:,3]*self.data['counts'][:, 2])/np.square(self.data['counts'][:,3] + self.data['counts'][:, 2])*np.sqrt(np.square(self.data['shot_noise'][:, 2]) + np.square(self.data['shot_noise'][:, 3]))
 
         tau = self.data['tau']
-        all_taus = self.data['tau']
-        echo_abs_contrast = np.absolute(self.data['norm_echo'])
-        deer_abs_contrast = np.absolute(self.data['norm_deer'])
-        abs_contrast_diff = np.absolute(self.data['norm_echo']-self.data['norm_deer'])
 
-        echo_contrast_min = self.settings['tau_times']['echo_contrast_threshold_for_tau_auto']
-        diff_contrast_min = self.settings['tau_times']['diff_contrast_threshold_for_tau_auto']
-        min_tau_auto = self.settings['tau_times']['min_tau_auto']
-        max_tau_auto = self.settings['tau_times']['max_tau_auto']
+        if self.settings['decoupling_seq']['do_deer']:
+            all_taus = self.data['tau']
+            echo_abs_contrast = np.absolute(self.data['norm_echo'])
+            deer_abs_contrast = np.absolute(self.data['norm_deer'])
+            abs_contrast_diff = np.absolute(self.data['norm_echo']-self.data['norm_deer'])
 
-        N = np.arange(all_taus.size)
-        # tau_candidates = None
-        # abs_contrast_diff_candidates = None
+            echo_contrast_min = self.settings['tau_times']['echo_contrast_threshold_for_tau_auto']
+            diff_contrast_min = self.settings['tau_times']['diff_contrast_threshold_for_tau_auto']
+            min_tau_auto = self.settings['tau_times']['min_tau_auto']
+            max_tau_auto = self.settings['tau_times']['max_tau_auto']
 
-        tau_candidates = [all_taus[i] for i in N if (echo_abs_contrast[i] >= echo_contrast_min and abs_contrast_diff[i] >= diff_contrast_min and all_taus[i] >= min_tau_auto and all_taus[i] <= max_tau_auto)]
-        #print 'all_taus'
-        #print all_taus
-        #print 'tau_candidates'
-        #print tau_candidates
-        abs_contrast_diff_candidates = [abs_contrast_diff[i] for i in N if (echo_abs_contrast[i] >= echo_contrast_min and abs_contrast_diff[i] >= diff_contrast_min and all_taus[i] >= min_tau_auto and all_taus[i] <= max_tau_auto)]
-        #print 'abs_contrast_diff_candidates'
-        #print abs_contrast_diff_candidates
-        if len(abs_contrast_diff_candidates) >0 and len(tau_candidates) >0  and len(abs_contrast_diff_candidates) == len(tau_candidates) :
-
-            #print 'tau_candidates'
-            #print tau_candidates
-            #print'np.argmax(abs_contrast_diff_candidates)'
-            #print np.argmax(abs_contrast_diff_candidates)
-            self.data['tau_auto'] = tau_candidates[np.argmax(abs_contrast_diff_candidates)]
-            self.log('found tau_auto: {:.3f}ns'. format(self.data['tau_auto']))
-        else:
-            self.data['tau_auto'] = None
-            self.log('no tau_auto found for the current contrast threshold setting')
+            N = np.arange(all_taus.size)
+            tau_candidates = [all_taus[i] for i in N if (echo_abs_contrast[i] >= echo_contrast_min and abs_contrast_diff[i] >= diff_contrast_min and all_taus[i] >= min_tau_auto and all_taus[i] <= max_tau_auto)]
+            abs_contrast_diff_candidates = [abs_contrast_diff[i] for i in N if (echo_abs_contrast[i] >= echo_contrast_min and abs_contrast_diff[i] >= diff_contrast_min and all_taus[i] >= min_tau_auto and all_taus[i] <= max_tau_auto)]
+            if len(abs_contrast_diff_candidates) >0 and len(tau_candidates) >0  and len(abs_contrast_diff_candidates) == len(tau_candidates) :
+                self.data['tau_auto'] = tau_candidates[np.argmax(abs_contrast_diff_candidates)]
+                self.log('found tau_auto: {:.3f}ns'. format(self.data['tau_auto']))
+            else:
+                self.data['tau_auto'] = None
+                self.log('no tau_auto found for the current contrast threshold setting')
 
 
         # if np.amax(np.absolute(self.data['norm_echo']-self.data['norm_deer'])) >= self.settings['tau_times']['contrast_threshold_for_tau_auto']:
@@ -1027,12 +1021,13 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             self.data['fits_echo'] = None
             self.log('ECHO t2 fit failed')
 
-        try:
-            fits = fit_exp_decay(tau, self.data['norm_deer'], offset=True, verbose=True)
-            self.data['fits_deer'] = fits
-        except:
-            self.data['fits_deer'] = None
-            self.log('DEER t2 fit failed')
+        if self.settings['decoupling_seq']['do_deer']:
+            try:
+                fits = fit_exp_decay(tau, self.data['norm_deer'], offset=True, verbose=True)
+                self.data['fits_deer'] = fits
+            except:
+                self.data['fits_deer'] = None
+                self.log('DEER t2 fit failed')
 
     def _create_pulse_sequences(self):
         '''
@@ -1119,48 +1114,49 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
                                        ])
 
                 # DEER SEQUENCE
+                if self.settings['decoupling_seq']['do_deer']:
+                    start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    # the first pi/2 pulse
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
+                    section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_1, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 1 * tau
 
-                start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                # the first pi/2 pulse
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
-                section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_1, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 1 * tau
+                    # the second pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
+                                           Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
+                                                 nv_reset_time),
+                                           Pulse('apd_readout',
+                                                 section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout,
+                                                 meas_time)
+                                           ])
 
-                # the second pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
-                                       Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
-                                             nv_reset_time),
-                                       Pulse('apd_readout',
-                                             section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout,
-                                             meas_time)
-                                       ])
+                    start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
+                    section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
 
-                start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
-                section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_1, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 1 * tau
 
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_1, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 1 * tau
+                    # the second 3*pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
+                                           Pulse('laser',
+                                                 section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
+                                                 nv_reset_time),
+                                           Pulse('apd_readout',
+                                                 section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout,
+                                                 meas_time)
+                                           ])
 
-                # the second 3*pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
-                                       Pulse('laser',
-                                             section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
-                                             nv_reset_time),
-                                       Pulse('apd_readout',
-                                             section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout,
-                                             meas_time)
-                                       ])
-
+                # print(pulse_sequence)
                 pulse_sequences.append(pulse_sequence)
 
             print('number of sequences before validation ', len(pulse_sequences))
@@ -1211,55 +1207,55 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
                                        ])
 
                 # DEER SEQUENCE
+                if self.settings['decoupling_seq']['do_deer']:
+                    start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    # the first pi/2 pulse
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
+                    section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 3 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 4 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 4 * tau
 
-                start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                # the first pi/2 pulse
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
-                section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 3 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 4 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 4 * tau
-
-                # the second pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
-                                       Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
-                                                 nv_reset_time),
-                                       Pulse('apd_readout', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout, meas_time)
-                                      ])
+                    # the second pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
+                                           Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
+                                                     nv_reset_time),
+                                           Pulse('apd_readout', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout, meas_time)
+                                          ])
 
 
-                start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
-                section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
+                    section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
 
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 3 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 4 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 4 * tau
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 3 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 4 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 4 * tau
 
-                # the second 3*pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
-                                       Pulse('laser', section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
-                                                 nv_reset_time),
-                                       Pulse('apd_readout', section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout, meas_time)
-                                      ])
+                    # the second 3*pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
+                                           Pulse('laser', section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
+                                                     nv_reset_time),
+                                           Pulse('apd_readout', section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout, meas_time)
+                                          ])
 
                 pulse_sequences.append(pulse_sequence)
 
@@ -1326,75 +1322,75 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
                                        ])
 
                 # DEER SEQUENCE
+                if self.settings['decoupling_seq']['do_deer']:
+                    start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    # the first pi/2 pulse
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
+                    section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 3 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 4 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 5 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 5 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 6 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 6 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 7 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 7 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 8 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 8 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 8 * tau
 
-                start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                # the first pi/2 pulse
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
-                section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 3 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 4 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 5 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 5 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 6 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 6 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 7 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 7 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 8 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 8 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 8 * tau
+                    # the second pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
+                                           Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
+                                                 nv_reset_time),
+                                           Pulse('apd_readout',
+                                                 section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout,
+                                                 meas_time)
+                                           ])
 
-                # the second pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
-                                       Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
-                                             nv_reset_time),
-                                       Pulse('apd_readout',
-                                             section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout,
-                                             meas_time)
-                                       ])
+                    start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
+                    section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
 
-                start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
-                section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 3 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 4 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 5 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 5 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 6 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 6 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_1, section_begin_time + 7 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 7 * tau - RF_pi_time / 2, RF_pi_time),
+                             Pulse(microwave_channel_2, section_begin_time + 8 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 8 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 8 * tau
 
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 2 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 2 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 3 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 3 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 4 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 4 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 5 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 5 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 6 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 6 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_1, section_begin_time + 7 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 7 * tau - RF_pi_time / 2, RF_pi_time),
-                         Pulse(microwave_channel_2, section_begin_time + 8 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 8 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 8 * tau
-
-                # the second 3*pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
-                                       Pulse('laser',
-                                             section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
-                                             nv_reset_time),
-                                       Pulse('apd_readout',
-                                             section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout,
-                                             meas_time)
-                                       ])
+                    # the second 3*pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
+                                           Pulse('laser',
+                                                 section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
+                                                 nv_reset_time),
+                                           Pulse('apd_readout',
+                                                 section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout,
+                                                 meas_time)
+                                           ])
 
                 pulse_sequences.append(pulse_sequence)
 
@@ -1445,47 +1441,47 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
                                        ])
 
                 # DEER SEQUENCE
+                if self.settings['decoupling_seq']['do_deer']:
+                    start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    # the first pi/2 pulse
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
+                    section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 1 * tau
 
-                start_of_DEER = section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                # the first pi/2 pulse
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_DEER, pi_half_time)])
-                section_begin_time = start_of_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 1 * tau
+                    # the second pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
+                                           Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
+                                                 nv_reset_time),
+                                           Pulse('apd_readout',
+                                                 section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout,
+                                                 meas_time)
+                                           ])
 
-                # the second pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, pi_half_time),
-                                       Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
-                                             nv_reset_time),
-                                       Pulse('apd_readout',
-                                             section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + delay_readout,
-                                             meas_time)
-                                       ])
+                    start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
+                    pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
+                    section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
 
-                start_of_second_DEER = section_begin_time + tau / 2 + pi_half_time + delay_mw_readout + nv_reset_time + laser_off_time
-                pulse_sequence.extend([Pulse(microwave_channel_1, start_of_second_DEER, pi_half_time)])
-                section_begin_time = start_of_second_DEER + pi_half_time - tau / 2  # for the first pulse, only wait tau/2
+                    for i in range(0, number_of_pulse_blocks):
+                        pulse_sequence.extend(
+                            [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
+                             Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
+                             ])
+                        section_begin_time += 1 * tau
 
-                for i in range(0, number_of_pulse_blocks):
-                    pulse_sequence.extend(
-                        [Pulse(microwave_channel_2, section_begin_time + 1 * tau - pi_time / 2, pi_time),
-                         Pulse('RF_switch', section_begin_time + 1 * tau - RF_pi_time / 2, RF_pi_time)
-                         ])
-                    section_begin_time += 1 * tau
-
-                # the second 3*pi/2 pulse and readout
-                pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
-                                       Pulse('laser',
-                                             section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
-                                             nv_reset_time),
-                                       Pulse('apd_readout',
-                                             section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout,
-                                             meas_time)
-                                       ])
+                    # the second 3*pi/2 pulse and readout
+                    pulse_sequence.extend([Pulse(microwave_channel_1, section_begin_time + tau / 2, three_pi_half_time),
+                                           Pulse('laser',
+                                                 section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout,
+                                                 nv_reset_time),
+                                           Pulse('apd_readout',
+                                                 section_begin_time + tau / 2 + three_pi_half_time + delay_mw_readout + delay_readout,
+                                                 meas_time)
+                                           ])
 
                 pulse_sequences.append(pulse_sequence)
 
@@ -1508,87 +1504,82 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             data = self.data
             tau = data['tau']
 
-        if data['norm_echo'] is not None and data['echo_err'] is not None and data['norm_deer'] is not None and data['deer_err'] is not None:
-            axislist[0].errorbar(tau, data['norm_echo'], data['echo_err'])
-            axislist[0].hold(True)
-            axislist[0].errorbar(tau, data['norm_deer'], data['deer_err'])
+        if self.settings['decoupling_seq']['do_deer']:
+            if data['norm_echo'] is not None and data['echo_err'] is not None and data['norm_deer'] is not None and data['deer_err'] is not None:
+                axislist[0].errorbar(tau, data['norm_echo'], data['echo_err'])
+                axislist[0].hold(True)
+                axislist[0].errorbar(tau, data['norm_deer'], data['deer_err'])
 
+                if data['fits_echo'] is not None and data['fits_deer'] is not None:
 
+                    fits_echo = data['fits_echo']
+                    fits_deer = data['fits_deer']
 
+                    tauinterp = np.linspace(np.min(tau),np.max(tau),100)
+                    axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_echo[0], fits_echo[1], fits_echo[2]),'b:')
+                    axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_deer[0], fits_deer[1], fits_deer[2]), 'g:')
+                    axislist[0].set_title('DEER {:s} {:d} block(s)\n averaged over {:d} blocks \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz \n T2 decay times (simple expo, p = 1): echo={:2.1f} ns, deer = {:2.1f} ns'.format(self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'], self.avg_block_number, self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6, fits_echo[1],fits_deer[1]))
+                    axislist[0].legend(labels=('Echo', 'DEER', 'exp fit: echo', 'exp fit: deer'), fontsize=8)
+                    axislist[0].set_ylabel('fluorescence contrast')
+                    axislist[0].set_xlabel('tau [ns]')
+                else:
+                    axislist[0].set_title(
+                        'DEER {:s} {:d} block(s)\n averaged over {:d} blocks \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(
+                            self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'],
+                            self.avg_block_number,
+                            self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency'] * 1e-9,
+                            self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency'] * 1e-6))
+                    axislist[0].legend(labels=('Echo', 'DEER'), fontsize=8)
+                    axislist[0].set_ylabel('fluorescence contrast')
+                    axislist[0].set_xlabel('tau [ns]')
 
+                if data['tau_auto'] is not None:
+                    axislist[0].plot(data['tau_auto'], 0, 'ro', lw=3)
+                    axislist[0].annotate('tau_auto = {:0.1f}'.format(data['tau_auto']), xy=(data['tau_auto'], 0), xytext=(data['tau_auto'] + 10., 0), xycoords='data')
 
-            if data['fits_echo'] is not None and data['fits_deer'] is not None:
-
-                fits_echo = data['fits_echo']
-                fits_deer = data['fits_deer']
-
-                # axislist[0].plot(tau, data['norm_echo'], 'b')
-                # axislist[0].hold(True)
-                # axislist[0].plot(tau, data['norm_deer'], 'r')
-
-                # axislist[0].errorbar(tau, data['norm_echo'], data['echo_err'])
-                # axislist[0].hold(True)
-                # axislist[0].errorbar(tau, data['norm_deer'], data['deer_err'])
-
-                tauinterp = np.linspace(np.min(tau),np.max(tau),100)
-                axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_echo[0], fits_echo[1], fits_echo[2]),'b:')
-                axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_deer[0], fits_deer[1], fits_deer[2]), 'g:')
-                axislist[0].set_title('DEER {:s} {:d} block(s)\n averaged over {:d} blocks \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz \n T2 decay times (simple expo, p = 1): echo={:2.1f} ns, deer = {:2.1f} ns'.format(self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'], self.avg_block_number, self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6, fits_echo[1],fits_deer[1]))
-                axislist[0].legend(labels=('Echo', 'DEER', 'exp fit: echo', 'exp fit: deer'), fontsize=8)
-                axislist[0].set_ylabel('fluorescence contrast')
-                axislist[0].set_xlabel('tau [ns]')
             else:
-                axislist[0].set_title(
-                    'DEER {:s} {:d} block(s)\n averaged over {:d} blocks \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(
-                        self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'],
-                        self.avg_block_number,
-                        self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency'] * 1e-9,
-                        self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency'] * 1e-6))
-                axislist[0].legend(labels=('Echo', 'DEER'), fontsize=8)
-                axislist[0].set_ylabel('fluorescence contrast')
-                axislist[0].set_xlabel('tau [ns]')
-
-            if data['tau_auto'] is not None:
-                axislist[0].plot(data['tau_auto'], 0, 'ro', lw=3)
-                axislist[0].annotate('tau_auto = {:0.1f}'.format(data['tau_auto']), xy=(data['tau_auto'], 0), xytext=(data['tau_auto'] + 10., 0), xycoords='data')
-
-
-
-
-
-
-            # axislist[0].plot(pi_time, cose_with_decay(pi_time, *fits), 'ro', lw=3)
-            # axislist[0].annotate('$\pi$={:0.1f}'.format(pi_time), xy=(pi_time, cose_with_decay(pi_time, *fits)),
-            #                      xytext=(pi_time - 10., cose_with_decay(pi_time, *fits) - .01), xycoords='data')
-
-
-
-            # super(DEER_XYn, self)._plot(axislist)
-            # axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(data['counts'][:, 2]))), fontsize=8)
-            # axislist[0].set_title('DEER mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
+                super(DEER_XYn, self)._plot(axislist)
+                axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(data['counts'][:, 2]))), fontsize=8)
+                axislist[0].set_title('DEER {:s} {:d} block(s) \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'], self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
 
         else:
-            super(DEER_XYn, self)._plot(axislist)
-            # norm_echo = 2. * (- data['counts'][:, 1] + data['counts'][:, 0]) / (data['counts'][:, 1] + data['counts'][:, 0])
-            # norm_deer = 2. * (- data['counts'][:, 3] + data['counts'][:, 2]) / (data['counts'][:, 3] + data['counts'][:, 2])
-            # axislist[0].hold(False)
-            # axislist[0].plot(tau, norm_echo, 'b')
-            # axislist[0].hold(True)
-            # axislist[0].plot(tau, norm_deer, 'r')
-            # axislist[0].legend(labels=('Echo {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'DEER {:.0f}kcps'.format(np.mean(data['counts'][:, 3]))), fontsize=8)
+            if data['norm_echo'] is not None and data['echo_err'] is not None:
+                axislist[0].errorbar(tau, data['norm_echo'], data['echo_err'])
+                axislist[0].hold(True)
 
-            # echo_up = data['counts'][:, 1]/((data['counts'][:, 0] + data['counts'][:, 1])/2.)-1.
-            # echo_down = data['counts'][:, 0]/((data['counts'][:, 0] + data['counts'][:, 1])/2.)-1.
-            # deer_up = data['counts'][:, 3]/((data['counts'][:, 2] + data['counts'][:, 3])/2.)-1.
-            # deer_down = data['counts'][:, 2]/((data['counts'][:, 2] + data['counts'][:, 3])/2.)-1.
-            # axislist[0].hold(False)
-            # axislist[0].plot(tau, echo_up, 'b')
-            # axislist[0].hold(True)
-            # axislist[0].plot(tau, echo_down, 'k')
-            # axislist[0].plot(tau, deer_up, 'r')
-            # axislist[0].plot(tau, deer_down, 'm')
-            axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(data['counts'][:, 2]))), fontsize=8)
-            axislist[0].set_title('DEER {:s} {:d} block(s) \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'], self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
+                if data['fits_echo'] is not None:
+
+                    fits_echo = data['fits_echo']
+                    tauinterp = np.linspace(np.min(tau), np.max(tau), 100)
+                    axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_echo[0], fits_echo[1], fits_echo[2]), 'b:')
+                    axislist[0].set_title(
+                        '{:s} {:d} block(s)\n averaged over {:d} blocks \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, \n T2 decay times (simple expo, p = 1): echo={:2.1f} n'.format(
+                            self.settings['decoupling_seq']['type'],
+                            self.settings['decoupling_seq']['num_of_pulse_blocks'], self.avg_block_number,
+                            self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency'] * 1e-9,
+                            fits_echo[1]))
+                    axislist[0].legend(labels=('Echo', 'exp fit: echo'), fontsize=8)
+                    axislist[0].set_ylabel('fluorescence contrast')
+                    axislist[0].set_xlabel('tau [ns]')
+                else:
+                    axislist[0].set_title(
+                        '{:s} {:d} block(s)\n averaged over {:d} blocks \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz'.format(
+                            self.settings['decoupling_seq']['type'],
+                            self.settings['decoupling_seq']['num_of_pulse_blocks'],
+                            self.avg_block_number,
+                            self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency'] * 1e-9))
+                    axislist[0].legend(labels=('Echo'), fontsize=8)
+                    axislist[0].set_ylabel('fluorescence contrast')
+                    axislist[0].set_xlabel('tau [ns]')
+
+            else:
+                super(DEER_XYn, self)._plot(axislist)
+                axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(data['counts'][:, 1])),
+                                           'Echo down {:.0f}kcps'.format(np.mean(data['counts'][:, 0]))), fontsize=8)
+                axislist[0].set_title(
+                    '{:s} {:d} block(s) \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz'.format(
+                        self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'],
+                        self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency'] * 1e-9))
 
     def _update_plot(self, axislist):
             # self._plot(axislist)
@@ -1597,9 +1588,16 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
                 return
             super(DEER_XYn, self)._update_plot(axislist)
 
-            axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(self.data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(self.data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(self.data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(self.data['counts'][:, 2]))), fontsize=8)
-            # axislist[0].set_title('DEER \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
-            axislist[0].set_title('DEER {:s} {:d} block(s) \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'], self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
+            if self.settings['decoupling_seq']['do_deer']:
+                axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(self.data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(self.data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(self.data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(self.data['counts'][:, 2]))), fontsize=8)
+                axislist[0].set_title('DEER {:s} {:d} block(s) \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'], self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
+            else:
+                axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(self.data['counts'][:, 1])),
+                               'Echo down {:.0f}kcps'.format(np.mean(self.data['counts'][:, 0]))), fontsize=8)
+                axislist[0].set_title('{:s} {:d} block(s) \n mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz'.format(
+                        self.settings['decoupling_seq']['type'], self.settings['decoupling_seq']['num_of_pulse_blocks'],
+                        self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency'] * 1e-9))
+
 
 class DEER_XYn_RFpwrsw(PulseBlasterBaseScript): # ER 5.25.2017
 
@@ -1639,7 +1637,7 @@ class DEER_XYn_RFpwrsw(PulseBlasterBaseScript): # ER 5.25.2017
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 1200000, int, 'number of averages'),
@@ -2364,7 +2362,7 @@ class DEER_XYn_RFfreqsw(PulseBlasterBaseScript): # ER 5.25.2017
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 1200000, int, 'number of averages'),
@@ -3180,7 +3178,7 @@ class DEER_XYn_RFpitimesw(PulseBlasterBaseScript):  # ER 5.25.2017
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int,
                       '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
@@ -3964,7 +3962,7 @@ class DressedStateCoupling(PulseBlasterBaseScript):
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int,
                       '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
@@ -4265,7 +4263,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 1000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 1000, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 30, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -4546,317 +4544,6 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
                 return
             super(DEER_T1ref, self)._update_plot(axislist)
 
-# #this doesn't work
-# class DEER_RFpitime(PulseBlasterBaseScript):
-#     """
-#     This script runs a DEER sequence scanning over RF pi duration
-#     ==> last edited by Ziwei Qiu 8/17/2017
-#         """
-#     _DEFAULT_SETTINGS = [
-#         Parameter('mw_pulses', [
-#             Parameter('mw_power', -45.0, float, 'microwave power in dB'),
-#             Parameter('mw_frequency', 2.87e9, float, 'microwave frequency in Hz'),
-#             Parameter('microwave_channel', 'i', ['i', 'q'], 'Channel to use for mw pulses'),
-#             Parameter('pi_pulse_time', 50.0, float, 'time duration of a pi pulse (in ns)'),
-#             Parameter('pi_half_pulse_time', 25.0, float, 'time duration of a pi/2 pulse (in ns)'),
-#             Parameter('3pi_half_pulse_time', 75.0, float, 'time duration of a 3pi/2 pulse (in ns)')
-#         ]),
-#         Parameter('RF_pulses', [
-#             Parameter('RF_power', -45.0, float, 'microwave power in dB'),
-#             Parameter('RF_frequency', 250e6, float, 'microwave frequency in Hz')
-#         ]),
-#         # Parameter('tau_times', [
-#         #     Parameter('min_time', 500, float, 'minimum time between pi pulses'),
-#         #     Parameter('max_time', 10000, float, 'maximum time between pi pulses'),
-#         #     Parameter('time_step', 5, [2.5, 5, 10, 20, 50, 100, 200, 500, 1000, 10000, 100000, 500000],
-#         #               'time step increment of time between pi pulses (in ns)')
-#         # ]),
-#         Parameter('tau', 2000,float,'time between MW pi pulses (in ns)'),
-#         Parameter('RF_pi_times', [
-#             Parameter('min_time', 50, float, 'minimum RF pi pulse duration (in ns)'),
-#             Parameter('max_time', 150, float, 'maximum RF pi pulse duration (in ns)'),
-#             Parameter('time_step', 10, [2.5, 5, 10, 20, 50, 100],
-#                       'time step increment(in ns)')
-#         ]),
-#         Parameter('read_out', [
-#             Parameter('meas_time', 300, float, '[ns] APD window to count  photons during readout'),
-#             Parameter('nv_reset_time', 1000, int, '[ns] time for optical polarization - typ. 1000 '),
-#             Parameter('laser_off_time', 1000, int,
-#                       '[ns] minimum laser off time before taking measurements'),
-#             Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
-#             Parameter('delay_readout', 30, int,
-#                       '[ns] delay between laser on and readout (given by spontaneous decay rate)')
-#         ]),
-#         Parameter('num_averages', 100000, int, 'number of averages'),
-#         Parameter('skip_invalid_sequences', True, bool, 'Skips any sequences with <15ns commands'),
-#         Parameter('mw_switch_extra_time', 10, [0, 10, 20, 30, 40],
-#                   '[ns] buffer time of the MW switch window on both sides of MW_i or MW_q pulses')
-#     ]
-#
-#     _INSTRUMENTS = {'daq': NI6259, 'PB': CN041PulseBlaster, 'mw_gen': MicrowaveGenerator,
-#                     'RF_gen': R8SMicrowaveGenerator}
-#
-#     def _function(self):
-#         # COMMENT_ME
-#
-#         self.data['fits_echo'] = None
-#         self.data['fits_deer'] = None
-#
-#         ### MW generator amplitude and frequency settings:
-#         self.instruments['mw_gen']['instance'].update({'amplitude': self.settings['mw_pulses']['mw_power']})
-#         self.instruments['mw_gen']['instance'].update({'frequency': self.settings['mw_pulses']['mw_frequency']})
-#         ### MW generator modulation settings:
-#         self.instruments['mw_gen']['instance'].update({'modulation_type': 'IQ'})
-#         self.instruments['mw_gen']['instance'].update({'modulation_function': 'External'})
-#         self.instruments['mw_gen']['instance'].update({'enable_modulation': True})
-#         ### Turn on MW generator:
-#         self.instruments['mw_gen']['instance'].update({'enable_output': True})
-#
-#         ### RF generator amplitude and frequency settings:
-#         self.instruments['RF_gen']['instance'].update({'power': self.settings['RF_pulses']['RF_power']})
-#         self.instruments['RF_gen']['instance'].update({'frequency': self.settings['RF_pulses']['RF_frequency']})
-#         ### RF generator modulation settings:
-#         self.instruments['RF_gen']['instance'].update({'freq_mode': 'CW'})
-#         self.instruments['RF_gen']['instance'].update({'power_mode': 'CW'})
-#         ### Turn on RF generator:
-#         self.instruments['RF_gen']['instance'].update({'enable_output': True})
-#
-#         ### Turn off green light (the pulse blaster will pulse it on when needed)
-#         self.instruments['PB']['instance'].update({'laser': {'status': False}})
-#
-#         super(DEER_RFpitime, self)._function(self.data)
-#
-#         ### Turn off green, RF and MW at the end of DEER
-#         self.instruments['PB']['instance'].update({'laser': {'status': False}})
-#         self.instruments['RF_gen']['instance'].update({'enable_output': False})
-#         self.instruments['mw_gen']['instance'].update({'enable_output': False})
-#
-#         self.data['norm_echo'] = 2. * (- self.data['counts'][:, 1] + self.data['counts'][:, 0]) / (
-#         self.data['counts'][:, 1] + self.data['counts'][:, 0])
-#         self.data['norm_deer'] = 2. * (- self.data['counts'][:, 3] + self.data['counts'][:, 2]) / (
-#         self.data['counts'][:, 3] + self.data['counts'][:, 2])
-#
-#         # error propagation starting with shot noise for each trace:
-#         self.data['echo_err'] = 2 * (self.data['counts'][:, 1] * self.data['counts'][:, 0]) / np.square(
-#             self.data['counts'][:, 1] + self.data['counts'][:, 0]) * np.sqrt(
-#             np.square(self.data['shot_noise'][:, 0]) + np.square(self.data['shot_noise'][:, 1]))
-#         self.data['deer_err'] = 2 * (self.data['counts'][:, 3] * self.data['counts'][:, 2]) / np.square(
-#             self.data['counts'][:, 3] + self.data['counts'][:, 2]) * np.sqrt(
-#             np.square(self.data['shot_noise'][:, 2]) + np.square(self.data['shot_noise'][:, 3]))
-#
-#         tau = self.data['tau']
-#         # try:
-#         #     fits = fit_exp_decay(tau, self.data['norm_echo'], offset=True, verbose=True)
-#         #     self.data['fits_echo'] = fits
-#         # except:
-#         #     self.data['fits_echo'] = None
-#         #     self.log('ECHO t2 fit failed')
-#         #
-#         # try:
-#         #     fits = fit_exp_decay(tau, self.data['norm_deer'], offset=True, verbose=True)
-#         #     self.data['fits_deer'] = fits
-#         # except:
-#         #     self.data['fits_deer'] = None
-#         #     self.log('DEER t2 fit failed')
-#
-#     def _create_pulse_sequences(self):
-#         '''
-#
-#         Returns: pulse_sequences, num_averages, tau_list, meas_time
-#             pulse_sequences: a list of pulse sequences, each corresponding to a different time 'tau' that is to be
-#             scanned over. Each pulse sequence is a list of pulse objects containing the desired pulses. Each pulse
-#             sequence must have the same number of daq read pulses
-#             num_averages: the number of times to repeat each pulse sequence
-#             tau_list: the list of times tau, with each value corresponding to a pulse sequence in pulse_sequences
-#             meas_time: the width (in ns) of the daq measurement
-#
-#         '''
-#         pulse_sequences = []
-#
-#         # tau_list = range(int(self.settings['tau_times']['min_time']), int(self.settings['tau_times']['max_time']),
-#         #                  self.settings['tau_times']['time_step'])
-#         RF_pi_time_list = range(int(self.settings['RF_pi_times']['min_time']), int(self.settings['RF_pi_times']['max_time']),
-#                          self.settings['RF_pi_times']['time_step'])
-#
-#         # ignore the sequence if the mw-pulse is shorter than 15ns (0 is ok because there is no mw pulse!)
-#         # tau_list = [x for x in tau_list if x == 0 or x >= 15]
-#         RF_pi_time_list = [x for x in RF_pi_time_list if x == 0 or x >= 15]
-#         tau_list = RF_pi_time_list
-#         print('RF_pi_time_list', RF_pi_time_list)
-#
-#         microwave_channel = 'microwave_' + self.settings['mw_pulses']['microwave_channel']
-#
-#         meas_time = self.settings['read_out']['meas_time']
-#         nv_reset_time = self.settings['read_out']['nv_reset_time']
-#         delay_readout = self.settings['read_out']['delay_readout']
-#         laser_off_time = self.settings['read_out']['laser_off_time']
-#         delay_mw_readout = self.settings['read_out']['delay_mw_readout']
-#
-#         pi_time = self.settings['mw_pulses']['pi_pulse_time']
-#         pi_half_time = self.settings['mw_pulses']['pi_half_pulse_time']
-#         three_pi_half_time = self.settings['mw_pulses']['3pi_half_pulse_time']
-#
-#         mw_sw_buffer = self.settings['mw_switch_extra_time']
-#         tau_fixed = self.settings['tau']
-#
-#         # rf_pi_time = self.settings['RF_pulses']['pi_pulse_time']
-#         # rf_pi_half_time = self.settings['RF_pulses']['pi_half_pulse_time']
-#         # rf_three_pi_half_time = self.settings['RF_pulses']['3pi_half_pulse_time']
-#
-#
-#         # for tau in tau_list:
-#         for RF_pi_time in RF_pi_time_list:
-#             # ECHO SEQUENCE:
-#             pulse_sequence = \
-#                 [
-#                     Pulse(microwave_channel, laser_off_time, pi_half_time),
-#                     Pulse(microwave_channel, laser_off_time + pi_half_time / 2. + tau_fixed - pi_time / 2., pi_time),
-#                     Pulse(microwave_channel, laser_off_time + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2.,
-#                           pi_half_time)
-#                 ]
-#
-#             end_of_first_HE = laser_off_time + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2. + pi_half_time
-#
-#             pulse_sequence += [
-#                 Pulse('laser', end_of_first_HE + delay_mw_readout, nv_reset_time),
-#                 Pulse('apd_readout', end_of_first_HE + delay_mw_readout + delay_readout, meas_time),
-#             ]
-#
-#             start_of_second_HE = end_of_first_HE + delay_mw_readout + nv_reset_time + laser_off_time
-#
-#             pulse_sequence += \
-#                 [
-#                     Pulse(microwave_channel, start_of_second_HE, pi_half_time),
-#                     Pulse(microwave_channel, start_of_second_HE + pi_half_time / 2. + tau_fixed - pi_time / 2., pi_time),
-#                     Pulse(microwave_channel, start_of_second_HE + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2.,
-#                           three_pi_half_time)
-#                 ]
-#
-#             end_of_second_HE = start_of_second_HE + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2. + three_pi_half_time
-#
-#             pulse_sequence += [
-#                 Pulse('laser', end_of_second_HE + delay_mw_readout, nv_reset_time),
-#                 Pulse('apd_readout', end_of_second_HE + delay_mw_readout + delay_readout, meas_time)
-#             ]
-#
-#             # DEER SEQUENCE
-#
-#             start_of_DEER = end_of_second_HE + delay_mw_readout + nv_reset_time
-#             pulse_sequence += \
-#                 [
-#                     Pulse(microwave_channel, start_of_DEER + laser_off_time, pi_half_time),
-#                     Pulse(microwave_channel, start_of_DEER + laser_off_time + pi_half_time / 2. + tau_fixed - pi_time / 2.,
-#                           pi_time),
-#                     Pulse('RF_switch', start_of_DEER + laser_off_time + pi_half_time / 2. + tau_fixed - RF_pi_time / 2.,
-#                           RF_pi_time),
-#                     Pulse(microwave_channel,
-#                           start_of_DEER + laser_off_time + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2.,
-#                           pi_half_time)
-#                 ]
-#
-#             end_of_first_HE = start_of_DEER + laser_off_time + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2. + pi_half_time
-#
-#             pulse_sequence += [
-#                 Pulse('laser', end_of_first_HE + delay_mw_readout, nv_reset_time),
-#                 Pulse('apd_readout', end_of_first_HE + delay_mw_readout + delay_readout, meas_time),
-#             ]
-#
-#             start_of_second_HE = end_of_first_HE + delay_mw_readout + nv_reset_time + laser_off_time
-#
-#             pulse_sequence += \
-#                 [
-#                     Pulse(microwave_channel, start_of_second_HE, pi_half_time),
-#                     Pulse(microwave_channel, start_of_second_HE + pi_half_time / 2. + tau_fixed - pi_time / 2., pi_time),
-#                     Pulse('RF_switch', start_of_second_HE + pi_half_time / 2. + tau_fixed - RF_pi_time / 2., RF_pi_time),
-#                     Pulse(microwave_channel, start_of_second_HE + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2.,
-#                           three_pi_half_time)
-#                 ]
-#
-#             end_of_second_HE = start_of_second_HE + pi_half_time / 2. + tau_fixed + tau_fixed - pi_half_time / 2. + three_pi_half_time
-#
-#             pulse_sequence += [
-#                 Pulse('laser', end_of_second_HE + delay_mw_readout, nv_reset_time),
-#                 Pulse('apd_readout', end_of_second_HE + delay_mw_readout + delay_readout, meas_time)
-#             ]
-#
-#             pulse_sequences.append(pulse_sequence)
-#
-#         print('number of sequences before validation ', len(pulse_sequences))
-#         return pulse_sequences, self.settings['num_averages'], RF_pi_time_list, meas_time
-#
-#     def _plot(self, axislist, data = None):
-#         '''
-#         Plot 1: self.data['tau'], the list of times specified for a given experiment, verses self.data['counts'], the data
-#         received for each time
-#         Plot 2: the pulse sequence performed at the current time (or if plotted statically, the last pulse sequence
-#         performed
-#
-#         Args:
-#             axes_list: list of axes to write plots to (uses first 2)
-#             data (optional) dataset to plot (dictionary that contains keys counts, tau, fits), if not provided use self.data
-#         '''
-#
-#         if data is None:
-#             data = self.data
-#             tau = data['tau']
-#
-#         super(DEER_RFpitime, self)._plot(axislist)
-#         axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(data['counts'][:, 2])), 'REF up {:.0f}kcps'.format(np.mean(data['counts'][:, 4])), 'REF down {:.0f}kcps'.format(np.mean(data['counts'][:, 5]))), fontsize=8)
-#         axislist[0].set_title('DEER mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
-#
-#
-#         # if data['fits_echo'] is not None and data['fits_deer'] is not None:
-#         #     fits_echo = data['fits_echo']
-#         #     fits_deer = data['fits_deer']
-#         #     fits_T1 = data['fits_T1']
-#         #
-#         #     # axislist[0].plot(tau, data['norm_echo'], 'b')
-#         #     # axislist[0].hold(True)
-#         #     # axislist[0].plot(tau, data['norm_deer'], 'r')
-#         #
-#         #     axislist[0].errorbar(tau, data['norm_echo'], data['echo_err'])
-#         #     axislist[0].hold(True)
-#         #     axislist[0].errorbar(tau, data['norm_deer'], data['deer_err'])
-#         #     axislist[0].errorbar(tau, data['norm_T1'], data['T1_err'])
-#         #
-#         #     tauinterp = np.linspace(np.min(tau),np.max(tau),100)
-#         #     axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_echo[0], fits_echo[1], fits_echo[2]),'b:')
-#         #     axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_deer[0], fits_deer[1], fits_deer[2]), 'g:')
-#         #     axislist[0].plot(tauinterp, exp_offset(tauinterp, fits_T1[0], fits_T1[1], fits_T1[2]), 'r:')
-#         #
-#         #     axislist[0].set_title('T2 decay times (simple exponential, p = 1): echo={:2.1f} ns, deer = {:2.1f} ns'.format(fits_echo[1],fits_deer[1]))
-#         #     axislist[0].legend(labels=('Echo', 'DEER', 'T1', 'exp fit: echo', 'exp fit: deer', 'exp fit: T1'), fontsize=8)
-#         # else:
-#         #     super(DEER_RFpitime, self)._plot(axislist)
-#         #     # norm_echo = 2. * (- data['counts'][:, 1] + data['counts'][:, 0]) / (data['counts'][:, 1] + data['counts'][:, 0])
-#         #     # norm_deer = 2. * (- data['counts'][:, 3] + data['counts'][:, 2]) / (data['counts'][:, 3] + data['counts'][:, 2])
-#         #     # axislist[0].hold(False)
-#         #     # axislist[0].plot(tau, norm_echo, 'b')
-#         #     # axislist[0].hold(True)
-#         #     # axislist[0].plot(tau, norm_deer, 'r')
-#         #     # axislist[0].legend(labels=('Echo {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'DEER {:.0f}kcps'.format(np.mean(data['counts'][:, 3]))), fontsize=8)
-#         #
-#         #     # echo_up = data['counts'][:, 1]/((data['counts'][:, 0] + data['counts'][:, 1])/2.)-1.
-#         #     # echo_down = data['counts'][:, 0]/((data['counts'][:, 0] + data['counts'][:, 1])/2.)-1.
-#         #     # deer_up = data['counts'][:, 3]/((data['counts'][:, 2] + data['counts'][:, 3])/2.)-1.
-#         #     # deer_down = data['counts'][:, 2]/((data['counts'][:, 2] + data['counts'][:, 3])/2.)-1.
-#         #     # axislist[0].hold(False)
-#         #     # axislist[0].plot(tau, echo_up, 'b')
-#         #     # axislist[0].hold(True)
-#         #     # axislist[0].plot(tau, echo_down, 'k')
-#         #     # axislist[0].plot(tau, deer_up, 'r')
-#         #     # axislist[0].plot(tau, deer_down, 'm')
-#         #     axislist[0].legend(labels=('Echo up {:.0f}kcps'.format(np.mean(data['counts'][:, 1])), 'Echo down {:.0f}kcps'.format(np.mean(data['counts'][:, 0])), 'DEER up {:.0f}kcps'.format(np.mean(data['counts'][:, 3])), 'DEER down {:.0f}kcps'.format(np.mean(data['counts'][:, 2])), 'REF up {:.0f}kcps'.format(np.mean(data['counts'][:, 4])), 'REF down {:.0f}kcps'.format(np.mean(data['counts'][:, 5]))), fontsize=8)
-#         #
-#         #     axislist[0].set_title('DEER mw-power:{:.0f}dBm, mw_freq:{:.3f} GHz, rf-power:{:.0f}dBm, rf_freq:{:.3f} MHz'.format(self.settings['mw_pulses']['mw_power'], self.settings['mw_pulses']['mw_frequency']*1e-9,self.settings['RF_pulses']['RF_power'], self.settings['RF_pulses']['RF_frequency']*1e-6))
-#
-#     def _update_plot(self, axislist):
-#             # self._plot(axislist)
-#             if len(axislist[0].lines) == 0:
-#                 self._plot(axislist)
-#                 return
-#             super(DEER_RFpitime, self)._update_plot(axislist) #this one doesn't work # this doesn't work
-
 class DEER_RF_pitime(PulseBlasterBaseScript): # ER 5.25.2017
     """
 This script runs a DEER sequence on the NV scanning over RF pi duration while fixing tau.
@@ -4890,7 +4577,7 @@ This script runs a DEER sequence on the NV scanning over RF pi duration while fi
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -5163,7 +4850,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 1000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 1000, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 30, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -5441,7 +5128,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -5784,7 +5471,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 1000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 1000, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 30, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -6039,7 +5726,7 @@ To symmetrize the sequence between the 0 and +/-1 state we reinitialize every ti
             Parameter('nv_reset_time', 2000, int, '[ns] time for optical polarization - typ. 1000 '),
             Parameter('laser_off_time', 500, int,
                       '[ns] minimum laser off time before taking measurements'),
-            Parameter('delay_mw_readout', 100, int, '[ns] delay between mw and readout'),
+            Parameter('delay_mw_readout', 600, int, '[ns] delay between mw and readout'),
             Parameter('delay_readout', 100, int, '[ns] delay between laser on and readout (given by spontaneous decay rate)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
@@ -6294,7 +5981,7 @@ This is different from the actual pulsed ESR, where we apply pi/2 pulses to get 
         ]),
         Parameter('read_out', [
             Parameter('integration_time', 4000, int, '1.) Time the MWs are off (us) and the measurement time. Laser is on and photons are counted during this time.'),
-            Parameter('delay_mw_readout', 100, int, 'delay between laser on and readout (in ns)')
+            Parameter('delay_mw_readout', 600, int, 'delay between laser on and readout (in ns)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
         Parameter('skip_invalid_sequences', True, bool, 'Skips any sequences with <15ns commands'),
@@ -6429,7 +6116,7 @@ This is different from the actual pulsed ESR, where we apply pi/2 pulses to get 
             Parameter('mw_on_time', 250, float, '2.) Time the MWs are on (us). If measure_ref is True Laser is on and photons are counted during time of duration mw_off_time (i.e. the measurement time)!!.'),
             Parameter('laser_off_time', 250, float, '3.) Laser is off during this time after mW_on and mw_off pulse (us). Set to zero to skip this.'),
             Parameter('measure_ref', True, bool, 'If true take reference measurement. In that case mw_on_time has to be larger than mw_off_time. If not mw_on_time is set equal to mw_off_time'),
-            Parameter('delay_mw_readout', 100, int, 'delay between laser on and readout (in ns)')
+            Parameter('delay_mw_readout', 600, int, 'delay between laser on and readout (in ns)')
         ]),
         Parameter('num_averages', 100000, int, 'number of averages'),
         Parameter('skip_invalid_sequences', True, bool, 'Skips any sequences with <15ns commands'),
@@ -6856,173 +6543,6 @@ It applies a sliding measurement window with respect to a readout from the NV 0 
         axes_list[0].set_title('Measurement Calibration')
         axes_list[0].legend(labels=('|0> State Fluorescence', '|1> State Fluoresence'), fontsize=8)
 
-
-# class XY8(PulseBlasterBaseScript):
-#     """
-# This script runs a CPMG pulse sequence.
-#     """
-#     _DEFAULT_SETTINGS = [
-#         Parameter('mw_pulses',[
-#             Parameter('mw_power', -45.0, float, 'microwave power in dB'),
-#             Parameter('mw_frequency', 2.87e9, float, 'microwave frequency in Hz'),
-#             # Parameter('mw_switch_extra_time', 15, int, 'Time to add before and after microwave switch is turned on'),
-#             Parameter('pi_pulse_time', 50, float, 'time duration of pi-pulse (in ns)'),
-#             Parameter('number_of_pulse_blocks', 1, range(1, 17), 'number of alternating x-y-x-y-y-x-y-x pulses'),
-#             Parameter('end_in_0', False, bool, 'end with 3pi/2 pulse so end state is |0> rather than |1>')
-#         ]),
-#         Parameter('tau_times',[
-#             Parameter('time_step', 5, [5, 10, 20, 50, 100, 200, 500, 1000, 10000, 100000],
-#                       'time step increment of time between pulses (in ns)'),
-#             Parameter('min_time', 100, float, 'minimum time between pulses (in ns)'),
-#             Parameter('max_time', 1000, float, 'maximum time between pulses (in ns)'),
-#         ]),
-#         Parameter('read_out',[
-#             Parameter('delay_mw_init', 1000, int, 'delay between initialization and mw (in ns)'),
-#             Parameter('delay_mw_readout', 200, int, 'delay between mw and readout (in ns)'),
-#             Parameter('meas_time', 250, float, 'measurement time after CPMG sequence (in ns)'),
-#             Parameter('nv_reset_time', 3000, int, 'time with laser on at the beginning to reset state'),
-#             Parameter('ref_meas_off_time', 1000, int,'laser off time before taking reference measurement at the end of init (ns)')
-#         ]),
-#         Parameter('num_averages', 1000, int, 'number of averages (should be less than a million)'),
-#         Parameter('skip_invalid_sequences', True, bool, 'Skips any sequences with <15ns commands'),
-#     ]
-#
-#     _INSTRUMENTS = {'daq': NI6259, 'PB': CN041PulseBlaster, 'mw_gen': MicrowaveGenerator}
-#     _SCRIPTS = {}
-#
-#     def _function(self):
-#         self.instruments['mw_gen']['instance'].update({'modulation_type': 'IQ'})
-#         self.instruments['mw_gen']['instance'].update({'amplitude': self.settings['mw_pulses']['mw_power']})
-#         self.instruments['mw_gen']['instance'].update({'frequency': self.settings['mw_pulses']['mw_frequency']})
-#         super(XY8, self)._function()
-#
-#     def _create_pulse_sequences(self):
-#         '''
-#
-#         Returns: pulse_sequences, num_averages, tau_list
-#             pulse_sequences: a list of pulse sequences, each corresponding to a different time 'tau' that is to be
-#             scanned over. Each pulse sequence is a list of pulse objects containing the desired pulses. Each pulse
-#             sequence must have the same number of daq read pulses
-#             num_averages: the number of times to repeat each pulse sequence
-#             tau_list: the list of times tau, with each value corresponding to a pulse sequence in pulse_sequences
-#             meas_time: the width (in ns) of the daq measurement
-#
-#         '''
-#         pulse_sequences = []
-#         # tau_list = range(int(max(15, self.settings['min_delay_time'])), int(self.settings['max_delay_time'] + 15),
-#         #                  self.settings['delay_time_step'])
-#
-#         # JG: changed the previous because the 15ns is taken care of later
-#         tau_list = range(int(self.settings['tau_times']['min_time']),
-#                          int(self.settings['tau_times']['max_time']),
-#                          self.settings['tau_times']['time_step']
-#                          )
-#
-#         reset_time = self.settings['read_out']['nv_reset_time']
-#         pi_time = self.settings['mw_pulses']['pi_pulse_time']
-#         pi_half_time = pi_time/2.0
-#
-#         ref_meas_off_time = self.settings['read_out']['ref_meas_off_time']
-#         meas_time = self.settings['read_out']['meas_time']
-#         delay_mw_init = self.settings['read_out']['delay_mw_init']
-#         delay_mw_readout = self.settings['read_out']['delay_mw_readout']
-#
-#         number_of_pulse_blocks = self.settings['mw_pulses']['number_of_pulse_blocks']
-#
-#
-#         for tau in tau_list:
-#
-#             pulse_sequence = []
-#
-#             #initialize and pi/2 pulse
-#             pulse_sequence.extend([Pulse('laser', 0, reset_time - ref_meas_off_time - 15 - meas_time),
-#                                    Pulse('apd_readout', reset_time - 15 - meas_time, meas_time),
-#                                    Pulse('laser', reset_time - 15 - meas_time, meas_time),
-#                                    Pulse('microwave_i', reset_time + delay_mw_init-pi_half_time/2, pi_half_time)
-#                                    ])
-#
-#             #CPMG xyxyyxyx loops added number_of_pulse_blocks times
-#             section_begin_time = reset_time + delay_mw_init - tau/2 #for the first pulse, only wait tau/2
-#             # JG 16-08-19 - begin changed to pi time instead of pi/2
-#             # section_begin_time = reset_time + delay_mw_init + pi_time
-#             # JG 16-08-19 - end
-#
-#             # for i in range(0, number_of_pulse_blocks):
-#             #     pulse_sequence.extend([Pulse('microwave_i', section_begin_time + 1*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_q', section_begin_time + 2*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_i', section_begin_time + 3*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_q', section_begin_time + 4*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_q', section_begin_time + 5*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_i', section_begin_time + 6*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_q', section_begin_time + 7*tau - pi_half_time, pi_time),
-#             #                            Pulse('microwave_i', section_begin_time + 8*tau - pi_half_time, pi_time)
-#             #                           ])
-#             #     section_begin_time += 8*tau
-#
-#             # AK 17-02-28 - switched to yx rather than xy since we saw echo was better with rephasing pulses
-#             #               perpendicular to pi/2 pulses
-#             for i in range(0, number_of_pulse_blocks):
-#                 pulse_sequence.extend([Pulse('microwave_q', section_begin_time + 1*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_i', section_begin_time + 2*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_q', section_begin_time + 3*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_i', section_begin_time + 4*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_i', section_begin_time + 5*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_q', section_begin_time + 6*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_i', section_begin_time + 7*tau - pi_half_time, pi_time),
-#                                        Pulse('microwave_q', section_begin_time + 8*tau - pi_half_time, pi_time)
-#                                       ])
-#                 section_begin_time += 8*tau
-#
-#
-#             if self.settings['mw_pulses']['end_in_0']:
-#                 # 3pi/2 and readout
-#                 pulse_sequence.extend([Pulse('microwave_i', section_begin_time + tau / 2 - 3*pi_half_time/4, 3*pi_half_time),
-#                                        Pulse('laser', section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
-#                                              meas_time),
-#                                        Pulse('apd_readout',
-#                                              section_begin_time + tau / 2 + pi_half_time + delay_mw_readout,
-#                                              meas_time)])
-#             else:
-#                 #pi/2 and readout
-#                 pulse_sequence.extend([Pulse('microwave_i', section_begin_time + tau/2 - pi_half_time/2, pi_half_time),
-#                                        Pulse('laser',       section_begin_time + tau/2 + pi_half_time + delay_mw_readout, meas_time),
-#                                        Pulse('apd_readout', section_begin_time + tau/2 + pi_half_time + delay_mw_readout, meas_time)])
-#
-#             # JG 16-08-19 - begin changed to pi time instead of pi/2
-#             # pulse_sequence.extend([Pulse('microwave_i', section_begin_time + tau, pi_half_time),
-#             #                        Pulse('laser',       section_begin_time + tau + pi_half_time + delay_mw_readout, meas_time),
-#             #                        Pulse('apd_readout', section_begin_time + tau + pi_half_time + delay_mw_readout, meas_time)])
-#             # JG 16-08-19 - end
-#
-#
-#             pulse_sequences.append(pulse_sequence)
-#
-#         # end_time_max = 0
-#         # for pulse_sequence in pulse_sequences:
-#         #     for pulse in pulse_sequence:
-#         #         end_time_max = max(end_time_max, pulse.start_time + pulse.duration)
-#         # for pulse_sequence in pulse_sequences:
-#         #     pulse_sequence.append(Pulse('laser', end_time_max + 1850, 15))
-#
-#         return pulse_sequences, self.settings['num_averages'], tau_list, meas_time
-#
-#
-#     def _plot(self, axislist, data = None):
-#         """
-#         Plot 1: self.data['tau'], the list of times specified for a given experiment, verses self.data['counts'], the data
-#         received for each time
-#         Plot 2: the pulse sequence performed at the current time (or if plotted statically, the last pulse sequence
-#         performed
-#
-#         Args:
-#             axes_list: list of axes to write plots to (uses first 2)
-#             data (optional) dataset to plot (dictionary that contains keys counts, tau), if not provided use self.data
-#         """
-#
-#         super(XY8, self)._plot(axislist, data)
-#         axislist[0].set_title('XY8')
-#         axislist[0].legend(labels=('Ref Fluorescence', 'XY8 data'), fontsize=8)
-
 class XY8(PulseBlasterBaseScript):
     """
 This script runs a CPMG pulse sequence.
@@ -7047,7 +6567,7 @@ modified by ZQ 8/21/2017
         ]),
         Parameter('read_out',[
             Parameter('delay_mw_init', 500, int, 'delay between initialization and mw (in ns)'),
-            Parameter('delay_mw_readout', 100, int, 'delay between mw and readout (in ns)'),
+            Parameter('delay_mw_readout', 600, int, 'delay between mw and readout (in ns)'),
             Parameter('meas_time', 500, float, 'measurement time after CPMG sequence (in ns)'),
             Parameter('nv_reset_time', 2000, int, 'time with laser on at the beginning to reset state'),
             Parameter('ref_meas_off_time', 1000, int,'laser off time before taking reference measurement at the end of init (ns)')
@@ -7215,7 +6735,7 @@ This script runs a CPMG pulse sequence.
         ]),
         Parameter('read_out',[
             Parameter('delay_mw_init', 1000, int, 'delay between initialization and mw (in ns)'),
-            Parameter('delay_mw_readout', 200, int, 'delay between mw and readout (in ns)'),
+            Parameter('delay_mw_readout', 600, int, 'delay between mw and readout (in ns)'),
             Parameter('meas_time', 250, float, 'measurement time after CPMG sequence (in ns)'),
             Parameter('nv_reset_time', 3000, int, 'time with laser on at the beginning to reset state'),
             Parameter('ref_meas_off_time', 1000, int,'laser off time before taking reference measurement at the end of init (ns)')
@@ -7363,7 +6883,7 @@ Tau/2 is the time between the center of the pulses!
             Parameter('nv_reset_time', 3000, int, 'time duration of the green laser to reset the spin state'),
             Parameter('ref_meas_off_time', 1000, int, 'laser off time before taking reference measurement at the end of init (ns)'),
             Parameter('delay_mw_init', 1000, int, 'delay between initialization and mw (in ns)'),
-            Parameter('delay_mw_readout', 100, int, 'delay between mw and readout (in ns)')
+            Parameter('delay_mw_readout', 600, int, 'delay between mw and readout (in ns)')
         ]),
         Parameter('num_averages', 1000, int, 'number of averages (should be less than a million)'),
         Parameter('skip_invalid_sequences', False, bool, 'Skips any sequences with <15ns commands')
@@ -7506,7 +7026,7 @@ This script runs a XY sequence for different number of pi pulses. Without pi-pul
         Parameter('num_averages', 1000, int, 'number of averages (should be less than a million)'),
         Parameter('reset_time', 1000, int, 'time duration of the green laser to reset the spin state'),
         Parameter('delay_init_mw', 100, int, 'delay between initialization and mw (in ns)'),
-        Parameter('delay_mw_readout', 100, int, 'delay between mw and readout (in ns)'),
+        Parameter('delay_mw_readout', 600, int, 'delay between mw and readout (in ns)'),
         Parameter('ref_meas_off_time', 1000, int,'laser off time before taking reference measurement at the end of init (ns)'),
         Parameter('skip_invalid_sequences', False, bool, 'Skips any sequences with <15ns commands')
     ]

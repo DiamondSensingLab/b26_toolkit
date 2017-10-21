@@ -97,6 +97,7 @@ class EsrRabiDeerXYn(Script):
                         self.log('Starting DEER sweeps with Pi/2=({:0.2e}), Pi=({:0.2e}), 3Pi/2=({:0.2e})'.format(self.pi_half_time, self.pi_time, self.three_pi_half_time))
                         self.scripts['deer'].settings['mw_pulses']['pi_half_pulse_time'] = float(self.pi_half_time)
                         self.scripts['deer'].settings['mw_pulses']['pi_pulse_time'] = float(self.pi_time)
+                        self.scripts['deer'].settings['RF_pulses']['RF_pi_pulse_time'] = float(self.pi_time)
                         self.scripts['deer'].settings['mw_pulses']['3pi_half_pulse_time'] = float(self.three_pi_half_time)
                         self.scripts['deer'].settings['decoupling_seq']['type'] = self.settings['DEER_decoupling_seq']['type']
                         self.scripts['deer'].settings['decoupling_seq']['num_of_pulse_blocks'] = self.settings['DEER_decoupling_seq']['num_of_pulse_blocks']

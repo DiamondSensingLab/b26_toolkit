@@ -448,6 +448,8 @@ for a given experiment
 
             self.log(failure_list_int)
             self.log('{:} sequences good out of {:}'.format(sum(failure_list_int),len(failure_list_int)))
+        else:
+            self.log('Validation succeeded: all {:} sequences good'.format(len(self.pulse_sequences)))
 
         return self.pulse_sequences, num_averages, tau_list, measurement_gate_width, failure_list
 

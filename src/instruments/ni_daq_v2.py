@@ -820,10 +820,6 @@ class DAQ(Instrument):
 
         """
         task = self.tasklist[task_name]
-        print('sample number:')
-        print(task['sample_num'])
-        print('sample rate in Hz:')
-        print(task['sample_rate'])
         self._check_error(self.nidaq.DAQmxWaitUntilTaskDone(task['task_handle'],
                                                             float64(task['sample_num'] / task['sample_rate'] * 4 + 1)))
         # self._check_error(self.nidaq.DAQmxWaitUntilTaskDone(task['task_handle'],

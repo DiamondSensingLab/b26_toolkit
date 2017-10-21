@@ -22,6 +22,7 @@ import sys, os
 from PyLabControl.src.core.read_write_functions import get_config_value
 
 dll_path = get_config_value('KINESIS_DLL_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.txt'))
+print(dll_path)
 sys.path.insert(0,dll_path)
 # JG: July 27 2016 uncommented folowing line: don't use import *!
 # from PyLabControl.src.core.instruments import *
@@ -40,6 +41,7 @@ clr.AddReference('System')
 # until runtime
 from Thorlabs.MotionControl.DeviceManagerCLI import DeviceManagerCLI
 from Thorlabs.MotionControl.TCube.DCServoCLI import TCubeDCServo
+from Thorlabs.MotionControl.KCube.DCServoCLI import KCubeDCServo
 # adds .NET stuctures corresponding to primitives
 from System import Decimal, Double
 
@@ -50,9 +52,13 @@ class TDC001(Instrument):
     The class communicates with the device over USB.
     '''
 
+    startup_magnet_Z = float(0)
+    magnetZ_lower_lim = float(0)
+    magnetZ_upper_lim = float(25) # for 25mm translation stage Z825B
+
     _DEFAULT_SETTINGS = Parameter([
-        Parameter('serial_number', 83832028, int, 'serial number written on device'),
-        Parameter('position', 0, float, 'servo position (from 0 to 6 in mm)'),
+        Parameter('serial_number', 83830719, int, 'serial number written on device'),
+        Parameter('position', 0, float, 'servo position (from 0 to 25 in mm)'),
         Parameter('velocity', 0, float, 'servo maximum velocity in mm/s')
     ])
 
@@ -89,6 +95,8 @@ class TDC001(Instrument):
 
         motorSettings = self.device.GetMotorConfiguration(str(self.settings['serial_number']))
         currentDeviceSettings = self.device.MotorDeviceSettings
+        self.startup_magnet_Z = self._get_position()
+        print('TDC001 startup Z position = ' + str(self.startup_magnet_Z))
 
     def update(self, settings):
         '''
@@ -146,18 +154,21 @@ class TDC001(Instrument):
     def _move_servo(self, position, velocity = 0):
         '''
         Move servo to given position with given maximum velocity. Raises an exception on failure.
-        :param position: position in mm, ranges from 0-6
+        :param position: position in mm, ranges from 0-25
         :param velocity: maximum velocity in mm/s, ranges from 0-2.5
         :PostState: servo has moved
         '''
-        try:
-            if(velocity != 0):
-                self._set_velocity(velocity)
-            # print("Moving Device to " + str(position))
-            self.device.MoveTo(self._Py_Decimal(position), 60000)
-        except Exception:
-            print("Failed to move to position")
-            raise
+        if (position >= self.magnetZ_lower_lim) & (position <= self.magnetZ_upper_lim):
+            try:
+                if(velocity != 0):
+                    self._set_velocity(velocity)
+                self.device.MoveTo(self._Py_Decimal(position), 60000)
+                print("Moved magnet Z to " + str(position) + "mm from bottom")
+            except Exception:
+                print("FAILED to move magnet Z to position" + str(position) + "mm from bottom")
+                # raise
+        else:
+            print(str(position) + " is out of allowed range [" + str(self.magnetZ_lower_lim)+","+str(self.magnetZ_upper_lim)+"]; no magnet Z move initiated")
 
     def _get_position(self):
         '''
@@ -201,6 +212,174 @@ class TDC001(Instrument):
         :return: the input as a python float
         '''
         return float(str(value))
+
+class KDC101(Instrument):
+    '''
+    Class to control the thorlabs TDC001 servo. Note that ALL DLL FUNCTIONS TAKING NUMERIC INPUT REQUIRE A SYSTEM.DECIMAL
+    VALUE. Check help doc at C:\Program Files\Thorlabs\Kinesis\Thorlabs.MotionControl.DotNet_API for the DLL api.
+    The class communicates with the device over USB.
+    '''
+
+    startup_magnet_azimuth = 0
+
+    _DEFAULT_SETTINGS = Parameter([
+        Parameter('serial_number', 27001615, int, 'serial number written on device'),
+        Parameter('angle', 0, float, 'servo angle (from 0 to 360 deg)'),
+        Parameter('angular_velocity', 0, float, 'servo angular velocity in deg/s'),
+        Parameter('angular_acceleration', 0, float, 'servo angular acceleration in deg/s/s')
+    ])
+
+    def __init__(self, name = None, settings = None):
+        super(KDC101, self).__init__(name, settings)
+        try:
+            DeviceManagerCLI.BuildDeviceList()
+            serial_number_list = DeviceManagerCLI.GetDeviceList(KCubeDCServo.DevicePrefix)
+        except (Exception):
+            print("Exception raised by BuildDeviceList")
+        if not (str(self.settings['serial_number']) in serial_number_list):
+            print(str(self.settings['serial_number']) + " is not a valid serial number")
+            raise
+
+        self.device = KCubeDCServo.CreateKCubeDCServo(str(self.settings['serial_number']))
+        if(self.device == None):
+            print(self.settings['serial_number'] + " is not a KCubeDCServo")
+            raise
+
+        try:
+            self.device.Connect(str(self.settings['serial_number']))
+        except Exception:
+            print('Failed to open device ' + str(self.settings['serial_number']))
+            raise
+
+        if not self.device.IsSettingsInitialized():
+            try:
+                self.device.WaitForSettingsInitialized(5000)
+            except Exception:
+                print("Settings failed to initialize")
+                raise
+
+        self.device.StartPolling(250)
+
+        motorSettings = self.device.GetMotorConfiguration(str(self.settings['serial_number']))
+        currentDeviceSettings = self.device.MotorDeviceSettings
+        self.startup_magnet_azimuth = self._get_position()
+        print('magnet azimuthal startup angle = ' + str(self.startup_magnet_azimuth) + "deg")
+
+    def update(self, settings):
+        '''
+        Updates internal settings, as well as the position and velocity set on the physical device
+        Args:
+            settings: A dictionary in the form of settings as seen in default settings
+        '''
+        super(KDC101, self).update(settings)
+        for key, value in settings.iteritems():
+            if key == 'position':
+                self._move_servo(value)
+            elif key == 'velocity':
+                self._set_velocity(value)
+
+    @property
+    def _PROBES(self):
+        return{
+            'position': 'servo position in mm',
+            'velocity': 'servo velocity in mm/s'
+        }
+
+    def read_probes(self, key):
+        assert key in self._PROBES.keys()
+        assert isinstance(key, str)
+
+        #query always returns string, need to cast to proper return type
+        if key in ['position']:
+            return self._get_position()
+        elif key in ['velocity']:
+            return self._get_velocity()
+
+    @property
+    def is_connected(self):
+        DeviceManagerCLI.BuildDeviceList()
+        return(str(self.settings['serial_number']) in DeviceManagerCLI.GetDeviceList(KCubeDCServo.DevicePrefix))
+
+    def __del__(self):
+        '''
+        Cleans up TDC001 connection
+        :PostState: TDC001 is disconnected
+        '''
+        self.device.StopPolling()
+        self.device.Disconnect()
+
+    def goto_home(self):
+        '''
+        Recenters device at the home position. Raises an exception on failure.
+        '''
+        try:
+            self.device.Home(60000)
+        except Exception:
+            print("Failed to move to position")
+            raise
+
+    def _move_servo(self, position, velocity = 0):
+        '''
+        Move servo to given position with given maximum velocity. Raises an exception on failure.
+        :param position: position in deg, ranges from 0-360
+        :param velocity: maximum velocity in deg/s, ranges from 0-2.5
+        :PostState: servo has moved
+        '''
+        if True:
+            try:
+                if(velocity != 0):
+                    self._set_velocity(velocity)
+                self.device.MoveTo(self._Py_Decimal(position), 60000)
+                print("Moved magnet azimuth to " + str(position) + "deg")
+            except Exception:
+                print("FAILED to move magnet azimuth to " + str(position) + "deg")
+                # raise
+        else:
+            print(str(position) + " is out of allowed range [" + str(self.magnetZ_lower_lim)+","+str(self.magnetZ_upper_lim)+"]; no magnet azimuth move initiated")
+
+    def _get_position(self):
+        '''
+        :return: position of servo
+        '''
+        return self._Undo_Decimal(self.device.Position)
+
+    def _set_velocity(self, velocity):
+        '''
+        :param maximum velocity in mm/s, ranges from 0-2.5
+        :PostState: velocity changed in hardware
+        '''
+        if(velocity != 0):
+            velPars = self.device.GetVelocityParams()
+            velPars.MaxVelocity = self._Py_Decimal(velocity)
+            self.device.SetVelocityParams(velPars)
+
+    def _get_velocity(self):
+        '''
+        :return: maximum velocity setting
+        '''
+        return self._Undo_Decimal(self.device.GetVelocityParams().MaxVelocity)
+
+
+
+    def _Py_Decimal(self, value):
+        '''
+        Casting a python double to System.Decimal results in the Decimal having only integer values, likely due to an
+        improper selection of the overloaded Decimal function. Casting it first to System.Double, which always maintains
+        precision, then from Double to Decimal, where the proper overloaded function is clear, bypasses this issue
+        :param value: a python double
+        :return: the input as a System.Decimal
+        '''
+        return Decimal(Double(value))
+
+    def _Undo_Decimal(self, value):
+        '''
+        Casting back from System.Decimal to a python float fails due to overloading issues, but one can successfully
+        cast back to a string. Thus, we use a two-part cast to return to python numeric types
+        :param value: a System.Decimal
+        :return: the input as a python float
+        '''
+        return float(str(value))
+
 
 if __name__ == '__main__':
     #A test function for the device. Tries to connect to the

@@ -74,7 +74,7 @@ def fit_esr_old(freq, ampl):
 
     return fit
 
-def find_nv_peaks(freq, data, width_Hz=0.005e9, initial_threshold = 0.00, steps_size = 0.05, ax=None):
+def find_nv_peaks(freq, data, width_Hz=0.01e9, initial_threshold = 0.00, steps_size = 0.05, ax=None):
     """
     finds the single peak or double peak frequencies of esr spectrum
     Args:
@@ -112,7 +112,7 @@ def find_nv_peaks(freq, data, width_Hz=0.005e9, initial_threshold = 0.00, steps_
 
 
         while continue_search:
-            idx = indexes(np.array(data), thres=threshold, min_dist=width)
+            idx = indexes(np.array(data), thres=threshold, min_dist=2*width)
             #             print(idx)
             if len(idx) > 2:
                 threshold += steps_size
@@ -184,8 +184,10 @@ def find_nv_peaks(freq, data, width_Hz=0.005e9, initial_threshold = 0.00, steps_
     # smooth signal with filter
     # int(width_pts/2)*2*3+1: to get a window size about three times the width and odd number
     win = signal.gaussian(int(width_pts / 2) * 2 * 3 + 1, std=width_pts)
-
     sig_filtered = signal.convolve(sig, win, mode='same') / sum(win)
+    # print('windo length = ' + str(int(width_pts / 2) * 2 * 3 + 1))
+    sig_filtered = signal.savgol_filter(sig, 5, 3)
+    # print("savgol filtering finished")
     max_idx, max_pts = find_peaks_pts(sig_filtered, width_pts, initial_threshold, steps_size)
 
     if len(max_idx) == 2:
@@ -249,11 +251,12 @@ def fit_esr(freq, ampl, strain_filtering=False, verbose = False):
     F0 = 2.878e9
     MIN_WIDTH = 3*np.mean(np.diff(freq)) # set the minumum width to at least 3 times the sample spacing
     MAX_WIDTH = 30e6  # set the max width 100MHz
+
     freq_peaks, ampl_peaks = find_nv_peaks(freq, ampl)
 
 
     if verbose:
-        print('found peaks at ', freq_peaks)
+        print('found peaks at ', freq_peaks, ' and amplitudes ', ampl_peaks)
 
     if verbose:
         print('minimum peak width:',  MIN_WIDTH)
@@ -262,7 +265,7 @@ def fit_esr(freq, ampl, strain_filtering=False, verbose = False):
     if max(freq) < F0:
         start_vals = get_lorentzian_fit_starting_values(freq, ampl)
         # start_vals = [constant_offset, amplitude, center, fwhm]
-        # start_vals[2] = freq_peaks[0]
+        start_vals[2] = freq_peaks[np.argmin(np.array(ampl_peaks))]
         # print(start_vals)
         try:
 
@@ -333,10 +336,11 @@ def fit_esr(freq, ampl, strain_filtering=False, verbose = False):
             # ESR fit failed!
             fit = None
             return fit
-        # if offset is < 5 kCounts/sec, definitely all noise
-        if fit[0] < 5:
-            fit = None
-            return fit
+
+        # # if offset is < 5 kCounts/sec, definitely all noise
+        # if fit[0] < 5:
+        #     fit = None
+        #     return fit
 
         # EXPERIMENTAL, REMOVE IF PROBLEMATIC
         # check that amplitude of at least one peak is greater than twice standard deviation (above the noise)

@@ -161,7 +161,6 @@ class EsrRabiDeerXYnSpectrum(Script):
                                 self.pi_half_time)
                             self.scripts['deer_freq'].settings['mw_pulses']['pi_pulse_time'] = float(self.pi_time)
                             self.scripts['deer_freq'].settings['RF_pulses']['RF_pi_pulse_time'] = float(self.pi_time)
-                            print('here we are')# otherwise short pulse
 
                             if self.scripts['deer_freq'].settings['mw_pulses']['pi_pulse_time'] == self.scripts['deer_freq'].settings['RF_pulses']['RF_pi_pulse_time']:
                                 print ('same pi time')

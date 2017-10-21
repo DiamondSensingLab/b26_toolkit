@@ -41,7 +41,12 @@ from esr_rabi_deerXYn_spectrum_advanced import EsrRabiDeerXYnSpectrumAdvanced
 from pulse_delays import PulseDelays
 from correlate_images import Track_Correlate_Images, Take_And_Correlate_Images
 from autofocus_CN041 import AutoFocusDAQ, AutoFocusTwoPoints
-from set_magnet_position import SetMagnetPosition
+from set_magnet_distance import SetMagnetDistance
+from set_magnet_azimuthal_angle import SetMagnetAzimuthalAngle
+from set_magnet_z import SetMagnetZ
+from sweep_magnet_z_esr import SweepMagnetZ_ESR
+from sweep_magnet_azimuth_esr import SweepMagnetAzimuth_ESR
+from sweep_magnet_distance_esr import SweepMagnetDistance_ESR
 
 # from keysight_get_spectrum import KeysightGetSpectrum
 # from labview_fpga_get_timetrace import LabviewFpgaTimetrace

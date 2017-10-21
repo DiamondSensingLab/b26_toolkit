@@ -26,6 +26,7 @@ from pulse_blaster import CN041PulseBlaster, Pulse
 # from attocube import Attocube
 from microwave_generator import MicrowaveGenerator
 from R8S_microwave_generator import R8SMicrowaveGenerator
+from dcservo_kinesis_dll import TDC001, KDC101
 # from magnet_coils import MagnetCoils
 # from temperature_controller import TemperatureController
 # from montana import CryoStation

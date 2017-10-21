@@ -23,7 +23,7 @@ from b26_toolkit.src.instruments import NI6259
 from PyLabControl.src.core import Script, Parameter
 
 
-class SetMagnetPosition(Script):
+class SetMagnetDistance(Script):
     """
 This script moves the magnet by a certain distance in a specified direction
     """
@@ -34,7 +34,7 @@ This script moves the magnet by a certain distance in a specified direction
         Parameter('pulse_channel', 'ctr1', ['ctr0','ctr1'], 'digital output channel to pulse motor'),
         Parameter('n_pulses', 10, int, 'number of drive pulses to send to motor'),
         Parameter('pulse_rate', 2, [0,0.01,0.02,0.05,0.1,0.2,0.5,1,2], 'pulse rate in kHz'),
-        Parameter('direction', 1, [0,1], 'direction to move the magnet (+1)=towards sample, (-1)=away from sample'),
+        Parameter('direction', 1, [0,1], 'direction to move the magnet (0)=towards sample, (1)=away from sample'),
     ]
 
     _INSTRUMENTS = {'NI6259':  NI6259}
@@ -80,13 +80,3 @@ This script moves the magnet by a certain distance in a specified direction
         self.daq_out.stop(task)
 
         self.log('magnet displaced by {:} pulses at {:}kHz'.format(self.settings['n_pulses'], self.settings['pulse_rate']))
-
-    #must be passed figure with galvo plot on first axis
-    # def plot(self, figure_list):
-    #     axes_Image = figure_list[0].axes[0]
-    #
-    #     # removes patches
-    #     [child.remove() for child in axes_Image.get_children() if isinstance(child, patches.Circle)]
-    #
-    #     patch = patches.Circle((self.settings['point']['x'], self.settings['point']['y']), self.settings['patch_size'], fc='y')
-    #     axes_Image.add_patch(patch)

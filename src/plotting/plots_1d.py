@@ -19,6 +19,7 @@
 import matplotlib.patches as patches
 import numpy as np
 from matplotlib.collections import PatchCollection
+import matplotlib.pyplot as plt
 
 from b26_toolkit.src.data_processing.fit_functions import lorentzian, double_lorentzian
 
@@ -108,6 +109,31 @@ def plot_esr(axes, frequency, counts, fit_params=None, plot_marker_data = 'b', p
     axes.set_ylabel('Kcounts/s')
     axes.hold(False)
     # return lines
+
+def plot_BsweepESR(axis, x, y1, y2, lbl):
+
+    assert len(x)==len(y1)
+    assert len(x)==len(y2)
+
+    axLeft = axis[0]
+    axRight = axis[1]
+    axLeft.hold(False)
+    axRight.hold(False)
+    for ind in range(len(x)):
+        axLeft.plot(x[ind], y1[ind])
+        axLeft.hold(True)
+        axRight.plot(x[ind], y2[ind])
+        axRight.hold(True)
+
+    if not (lbl == None):
+        axLeft.set_xlabel(lbl[0])
+        axLeft.set_ylabel(lbl[1])
+        axRight.set_xlabel(lbl[0])
+        axRight.set_ylabel(lbl[2])
+
+    axLeft.hold(False)
+    axRight.hold(False)
+
 
 def plot_pulses(axis, pulse_collection, pulse_colors=None):
     """
